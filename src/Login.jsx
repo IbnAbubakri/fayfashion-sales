@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from './api'
+import BrandLogo from './BrandLogo'
 
 function Icon({ name, size = 18 }) {
   const paths = {
@@ -67,11 +68,8 @@ export default function Login({ onSuccess }) {
     <main className="auth-page">
       <section className="auth-brand">
         <div className="brand brand-light">
-          <span className="brand-mark">F</span>
-          <span className="brand-copy">
-            <strong>FayFashionCart</strong>
-            <small>Sales workspace</small>
-          </span>
+          <BrandLogo inverse />
+          <span className="brand-subtitle">Sales workspace</span>
         </div>
 
         <div className="auth-brand-copy">

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import Login from './Login'
 import { balanceDue, formatNaira, paymentLabel, paymentStatus } from '../shared/pricing'
+import BrandLogo from './BrandLogo'
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -320,11 +321,8 @@ function Dashboard({ user, onLogout }) {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brand-mark">F</span>
-          <span className="brand-copy">
-            <strong>FayFashionCart</strong>
-            <small>Sales workspace</small>
-          </span>
+          <BrandLogo />
+          <span className="brand-subtitle">Sales workspace</span>
         </div>
 
         <nav className="sidebar-nav" aria-label="Primary navigation">
@@ -635,7 +633,7 @@ export default function App() {
   if (session.status === 'loading') {
     return (
       <main className="auth-loading">
-        <span className="brand-mark">F</span>
+        <BrandLogo />
         <span>Preparing your workspace…</span>
       </main>
     )
