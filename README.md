@@ -21,12 +21,12 @@ The storefront stores supplier prices and adds a markup before display:
 
 | Supplier/base price | Markup |
 |---:|---:|
-| < ₦1,000 | ₦500 |
-| < ₦3,000 | ₦1,000 |
-| < ₦5,000 | ₦1,500 |
-| < ₦10,000 | ₦2,000 |
-| < ₦20,000 | ₦3,000 |
-| < ₦50,000 | ₦4,000 |
+| < ₦1,000 | ₦300 |
+| < ₦3,000 | ₦700 |
+| < ₦5,000 | ₦1,000 |
+| < ₦10,000 | ₦1,500 |
+| < ₦20,000 | ₦2,000 |
+| < ₦50,000 | ₦3,000 |
 | ≥ ₦50,000 | ₦5,000 |
 
 The record book reverses that markup from the displayed website price.

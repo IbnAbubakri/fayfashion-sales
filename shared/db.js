@@ -1,5 +1,5 @@
 import { neon } from '@neondatabase/serverless'
-import { reverseMarkup } from './pricing.js'
+import { priceMarkup, reverseMarkup } from './pricing.js'
 
 let client = null
 let tablePromise = null
@@ -75,7 +75,8 @@ export function normalizeInsert(b, catalogProducts = []) {
   if (!websitePrice) {
     const p = catalogProducts.find((x) => String(x.id) === productId)
     const v = variantId ? (p?.options || []).find((o) => String(o.id) === variantId) : null
-    websitePrice = Math.round(Number(v?.price ?? p?.price) || 0)
+    const basePrice = Math.round(Number(v?.price ?? p?.price) || 0)
+    websitePrice = basePrice + priceMarkup(basePrice)
   }
   const actualPrice = reverseMarkup(websitePrice)
   return {

@@ -99,9 +99,9 @@ export default function App() {
 
   const selectedVariant = form.product?.options?.find((o) => o.id === form.variantId) || null
   const websitePrice = selectedVariant?.websitePrice ?? form.product?.websitePrice ?? 0
-  // Server recomputes this too; keeping it here makes the form instant.
-  const markup = websitePrice <= 1500 ? 500 : websitePrice <= 4000 ? 1000 : websitePrice <= 6500 ? 1500 : websitePrice <= 12000 ? 2000 : websitePrice <= 23000 ? 3000 : websitePrice <= 54000 ? 4000 : 5000
-  const actualPrice = Math.max(0, websitePrice - markup)
+  // The API supplies the supplier price with the catalogue, so the form and the
+  // saved record always use the same markup ladder.
+  const actualPrice = selectedVariant?.actualPrice ?? form.product?.actualPrice ?? 0
   const profit = (Number(form.amountPaid) || 0) - actualPrice
 
   const filteredSales = useMemo(() => {
@@ -148,7 +148,8 @@ export default function App() {
       id: sale.product_id,
       name: sale.product_name,
       websitePrice: sale.website_price,
-      options: sale.variant_id ? [{ id: sale.variant_id, label: sale.variant_label || '', websitePrice: sale.website_price }] : [],
+      actualPrice: sale.actual_price,
+      options: sale.variant_id ? [{ id: sale.variant_id, label: sale.variant_label || '', websitePrice: sale.website_price, actualPrice: sale.actual_price }] : [],
     }
     setForm({
       saleDate: sale.sale_date,

@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
-import { priceMarkup, reverseMarkup } from '../shared/pricing.js'
+import { formatNaira, priceMarkup, reverseMarkup } from '../shared/pricing.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DB_DIR = join(ROOT, 'data')
@@ -65,7 +65,8 @@ async function fetchCatalog() {
 function catalogOptions(product) {
   const options = Array.isArray(product.options) ? product.options : []
   return options.map((o) => {
-    const websitePrice = Number(o.price) > 0 ? Number(o.price) : Number(product.price) || 0
+    const basePrice = Number(o.price) > 0 ? Number(o.price) : Number(product.price) || 0
+    const websitePrice = basePrice + priceMarkup(basePrice)
     return {
       id: String(o.id),
       label: String(o.label),
@@ -78,7 +79,12 @@ function catalogOptions(product) {
 
 function publicProduct(product) {
   const options = catalogOptions(product)
-  const websitePrice = Number(product.price) || 0
+  const basePrice = Number(product.price) || 0
+  const websitePrice = basePrice + priceMarkup(basePrice)
+  const rawTo = Number(product.price_to) || 0
+  const priceText = rawTo > basePrice
+    ? `${formatNaira(websitePrice)} - ${formatNaira(rawTo + priceMarkup(rawTo))}`
+    : formatNaira(websitePrice)
   return {
     id: String(product.id),
     name: String(product.name || ''),
@@ -87,7 +93,7 @@ function publicProduct(product) {
     image: product.image || product.thumbnail || null,
     websitePrice,
     actualPrice: reverseMarkup(websitePrice),
-    priceText: product.price_display || product.price_formatted || '',
+    priceText,
     hasOptions: options.length > 0,
     options,
   }
@@ -167,7 +173,8 @@ async function handleApi(req, res, pathname) {
         const p = data.products.find((x) => String(x.id) === productId)
         if (p) {
           const v = variantId ? (p.options || []).find((o) => String(o.id) === variantId) : null
-          websitePrice = money(v?.price ?? p.price)
+          const basePrice = money(v?.price ?? p.price)
+          websitePrice = basePrice + priceMarkup(basePrice)
         }
       } catch {}
     }

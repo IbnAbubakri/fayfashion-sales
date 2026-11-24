@@ -4,24 +4,28 @@
 // so the "actual price" shown here is the supplier price before markup.
 export function priceMarkup(basePrice) {
   const base = Number(basePrice) || 0
-  if (base < 1000) return 500
-  if (base < 3000) return 1000
-  if (base < 5000) return 1500
-  if (base < 10000) return 2000
-  if (base < 20000) return 3000
-  if (base < 50000) return 4000
+  if (base < 1000) return 300
+  if (base < 3000) return 700
+  if (base < 5000) return 1000
+  if (base < 10000) return 1500
+  if (base < 20000) return 2000
+  if (base < 50000) return 3000
   return 5000
 }
 
 export function reverseMarkup(displayPrice) {
   const display = Math.max(0, Math.round(Number(displayPrice) || 0))
-  // Show web -> base ranges: [500,1500] -> +500; [2000,4000] -> +1000; etc.
-  if (display <= 1500) return Math.max(0, display - 500)
-  if (display <= 4000) return display - 1000
-  if (display <= 6500) return display - 1500
-  if (display <= 12000) return display - 2000
-  if (display <= 23000) return display - 3000
-  if (display <= 54000) return display - 4000
+  // Display ranges produced by the ladder above:
+  // [300,1300) -> +300; [1700,3700) -> +700; [4000,6000) -> +1000;
+  // [6500,11500) -> +1500; [12000,22000) -> +2000; [23000,53000) -> +3000;
+  // [55000,∞) -> +5000. The gaps are not produced by a real base price.
+  if (display <= 300) return 0
+  if (display < 1300) return display - 300
+  if (display < 3700) return display - 700
+  if (display < 6000) return display - 1000
+  if (display < 11500) return display - 1500
+  if (display < 22000) return display - 2000
+  if (display < 53000) return display - 3000
   return display - 5000
 }
 
