@@ -1,8 +1,8 @@
 import { reverseMarkup } from './pricing.js'
 
-const CATALOG_URLS = [
-  'http://fayfashioncart.com.ng/products.json',
-  'https://fayfashioncart.vercel.app/products.json',
+const CATALOG_SOURCES = [
+  { url: 'http://fayfashioncart.com.ng/products.json', timeoutMs: 8000 },
+  { url: 'https://fayfashioncart.vercel.app/products.json', timeoutMs: 45000 },
 ]
 
 let cache = { data: null, fetchedAt: 0 }
@@ -10,12 +10,15 @@ let cache = { data: null, fetchedAt: 0 }
 export async function fetchCatalog() {
   if (cache.data && Date.now() - cache.fetchedAt < 5 * 60 * 1000) return cache.data
   let lastError
-  for (const url of CATALOG_URLS) {
+  for (const source of CATALOG_SOURCES) {
     try {
-      const res = await fetch(url, { headers: { 'cache-control': 'no-cache' } })
-      if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}`)
+      const res = await fetch(source.url, {
+        headers: { 'cache-control': 'no-cache' },
+        signal: AbortSignal.timeout(source.timeoutMs),
+      })
+      if (!res.ok) throw new Error(`${source.url} -> HTTP ${res.status}`)
       const data = await res.json()
-      if (!Array.isArray(data.products)) throw new Error(`${url} has no products array`)
+      if (!Array.isArray(data.products)) throw new Error(`${source.url} has no products array`)
       cache = { data, fetchedAt: Date.now() }
       return data
     } catch (err) {
