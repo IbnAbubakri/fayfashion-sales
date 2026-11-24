@@ -7,8 +7,13 @@ A local sales/profit record book for FayFashionCart. It reads the current live c
 - Searchable product dropdown from the live FayFashionCart catalogue
 - Variant-aware pricing when a product has size/colour options
 - Website price, actual/source price, amount paid, and auto profit in a table
-- Sales stored in local SQLite (`data/sales.db`), not browser storage
+- Sales stored in Neon Postgres through Vercel serverless APIs (cloud persistence)
+- Local development can still use SQLite via `npm run dev`
 - Edit/delete records, filter by date/product, export CSV
+
+## Vercel environment
+
+Set `DATABASE_URL` to the Neon Postgres connection string. The first API request creates the `sales` table automatically.
 
 ## Pricing rule
 
