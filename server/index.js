@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
 import { formatNaira, priceMarkup, reverseMarkup } from '../shared/pricing.js'
+import { checkCredentials, clearSessionCookie, createSessionToken, credentialsConfigured, readSession, sessionCookie } from '../shared/auth.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DB_DIR = join(ROOT, 'data')
@@ -148,6 +149,29 @@ const routes = {
 }
 
 async function handleApi(req, res, pathname) {
+  if (pathname.startsWith('/api/auth/')) {
+    if (pathname === '/api/auth/session' && req.method === 'GET') {
+      const username = readSession(req)
+      return send(res, 200, { authenticated: Boolean(username), username: username || null })
+    }
+    if (pathname === '/api/auth/login' && req.method === 'POST') {
+      if (!credentialsConfigured()) return send(res, 500, { error: 'Login is not configured.' })
+      const b = await bodyJson(req)
+      const username = String(b.username || '').trim()
+      if (!checkCredentials(username, b.password)) return send(res, 401, { error: 'Incorrect username or password.' })
+      res.setHeader('set-cookie', sessionCookie(createSessionToken(username)))
+      return send(res, 200, { ok: true, username })
+    }
+    if (pathname === '/api/auth/logout' && req.method === 'POST') {
+      res.setHeader('set-cookie', clearSessionCookie())
+      return send(res, 200, { ok: true })
+    }
+    return send(res, 405, { error: 'Method not allowed' })
+  }
+
+  // The catalogue, sale records, and CSV export all require a signed session.
+  if (!readSession(req)) return send(res, 401, { error: 'Please sign in to continue.' })
+
   const route = routes[pathname]
   if (route) return send(res, 200, await route())
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
+import Login from './Login'
 import { formatNaira } from '../shared/pricing'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -62,7 +63,7 @@ function ProductPicker({ products, selected, onSelect }) {
   )
 }
 
-export default function App() {
+function Dashboard({ user, onLogout }) {
   const [products, setProducts] = useState([])
   const [catalogMeta, setCatalogMeta] = useState(null)
   const [sales, setSales] = useState([])
@@ -177,7 +178,9 @@ export default function App() {
           <h1>Sales Book</h1>
         </div>
         <div className="top-actions">
+          <span className="session-user">Signed in as <strong>{user}</strong></span>
           <a className="button ghost" href="/api/sales/export" download="fayfashion-sales.csv">Export CSV</a>
+          <button className="button ghost" onClick={onLogout}>Log out</button>
           <button className="button primary" onClick={() => document.getElementById('record-form')?.scrollIntoView({ behavior: 'smooth' })}>+ Record sale</button>
         </div>
       </header>
@@ -288,4 +291,31 @@ export default function App() {
       <p className="footer-note">Prices are read live from fayfashioncart.com.ng and the markup is reversed using the storefront's own price ladder.</p>
     </div>
   )
+}
+
+export default function App() {
+  const [session, setSession] = useState({ status: 'loading', username: '' })
+
+  useEffect(() => {
+    let active = true
+    api.session()
+      .then((data) => {
+        if (!active) return
+        setSession(data.authenticated
+          ? { status: 'authenticated', username: data.username || '' }
+          : { status: 'guest', username: '' })
+      })
+      .catch(() => { if (active) setSession({ status: 'guest', username: '' }) })
+    return () => { active = false }
+  }, [])
+
+  const logout = async () => {
+    try { await api.logout() } finally { setSession({ status: 'guest', username: '' }) }
+  }
+
+  if (session.status === 'loading') return <main className="auth-loading">Checking session…</main>
+  if (session.status !== 'authenticated') {
+    return <Login onSuccess={(username) => setSession({ status: 'authenticated', username })} />
+  }
+  return <Dashboard user={session.username} onLogout={logout} />
 }

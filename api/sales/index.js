@@ -1,7 +1,9 @@
+import { requireAuth } from '../../shared/auth.js'
 import { ensureTable, getSql, normalizeInsert, publicSale, readBody, send } from '../../shared/db.js'
 import { fetchCatalog } from '../../shared/catalog.js'
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res, send)) return
   try {
     await ensureTable()
 

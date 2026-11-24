@@ -10,10 +10,21 @@ A local sales/profit record book for FayFashionCart. It reads the current live c
 - Sales stored in Neon Postgres through Vercel serverless APIs (cloud persistence)
 - Local development can still use SQLite via `npm run dev`
 - Edit/delete records, filter by date/product, export CSV
+- Password-protected dashboard with a signed, httpOnly session cookie
 
 ## Vercel environment
 
 Set `DATABASE_URL` to the Neon Postgres connection string. The first API request creates the `sales` table automatically.
+
+The dashboard and every API route require sign-in. Set these environment variables in Vercel:
+
+| Variable | Purpose |
+|---|---|
+| `ADMIN_USER` | Login username |
+| `ADMIN_PASSWORD` | Login password |
+| `SESSION_SECRET` | Long random string used to sign session cookies |
+
+Sessions last 12 hours and are stored in an `HttpOnly`, `SameSite=Lax`, `Secure` cookie. Signing out clears the cookie.
 
 ## Pricing rule
 

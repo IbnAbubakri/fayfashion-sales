@@ -1,3 +1,4 @@
+import { requireAuth } from '../../shared/auth.js'
 import { ensureTable, getSql, publicSale, readBody, send } from '../../shared/db.js'
 import { reverseMarkup } from '../../shared/pricing.js'
 
@@ -6,6 +7,7 @@ function idFrom(req) {
 }
 
 export default async function handler(req, res) {
+  if (!requireAuth(req, res, send)) return
   try {
     const id = idFrom(req)
     if (!id) return send(res, 400, { error: 'Invalid sale id.' })

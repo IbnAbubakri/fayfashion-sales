@@ -8,6 +8,13 @@ export async function getJson(url, options) {
 }
 
 export const api = {
+  session: () => getJson('/api/auth/session'),
+  login: (credentials) => getJson('/api/auth/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(credentials),
+  }),
+  logout: () => getJson('/api/auth/logout', { method: 'POST' }),
   products: () => getJson('/api/products'),
   sales: () => getJson('/api/sales'),
   addSale: (payload) => getJson('/api/sales', {
