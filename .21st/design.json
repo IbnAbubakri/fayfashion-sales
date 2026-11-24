@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "project": {
+    "name": "fayfashion-sales",
+    "productType": "Private internal sales dashboard",
+    "stack": [
+      "react",
+      "vite"
+    ]
+  },
+  "sources": {
+    "tokens": [
+      "src/styles.css"
+    ],
+    "components": [
+      "src/App.jsx",
+      "src/Login.jsx"
+    ],
+    "assets": [],
+    "instructions": []
+  },
+  "design": {
+    "colorMode": "light",
+    "colors": {
+      "background": "#f4f6f4",
+      "surface": "#ffffff",
+      "ink": "#18231c",
+      "muted": "#69766d",
+      "brand": "#17663d",
+      "brandDark": "#103825",
+      "brandSoft": "#e7f3eb",
+      "positive": "#087443",
+      "negative": "#b42318"
+    },
+    "typography": {
+      "family": "Inter / system sans-serif"
+    },
+    "spacing": {
+      "scale": "4px-based"
+    },
+    "radius": {
+      "control": "8px",
+      "card": "12px",
+      "large": "16px"
+    },
+    "shadows": {
+      "card": "subtle layered shadow",
+      "modal": "soft elevated shadow"
+    },
+    "motion": {
+      "hover": "160ms ease"
+    },
+    "density": "comfortable"
+  },
+  "components": {
+    "installed": [],
+    "preferredPrimitives": [],
+    "patterns": [
+      "Sidebar app shell",
+      "KPI stat cards",
+      "Hairline data table",
+      "Split-screen login"
+    ]
+  },
+  "constraints": {
+    "must": [
+      "Keep the signed-in session gate and protected APIs",
+      "Preserve live catalogue pricing and markup behaviour",
+      "Use plain React and CSS with no new UI dependencies"
+    ],
+    "avoid": [
+      "Purple gradients",
+      "Glassmorphism",
+      "Oversized display typography"
+    ]
+  },
+  "decisions": [
+    {
+      "title": "Refined green-and-charcoal admin shell",
+      "date": "2026-11-24",
+      "source": "21st catalog search: dashboard shell, app dashboard layout, data table, minimal login",
+      "rationale": "Adopted a professional sidebar workspace, restrained neutral surfaces, hairline borders, compact KPI cards, a readable records table, and a split-screen login while keeping FayFashionCart's green brand."
+    }
+  ],
+  "evidence": [
+    {
+      "fact": "project.stack:react",
+      "source": "package.json"
+    },
+    {
+      "fact": "project.stack:vite",
+      "source": "package.json"
+    }
+  ],
+  "generatedAt": "2026-11-24T18:39:09.160Z"
+}

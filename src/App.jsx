@@ -5,11 +5,111 @@ import { formatNaira } from '../shared/pricing'
 
 const today = new Date().toISOString().slice(0, 10)
 
+function Icon({ name, size = 18 }) {
+  const paths = {
+    grid: (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="1.5" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" />
+        <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      </>
+    ),
+    plus: <path d="M12 5v14M5 12h14" />,
+    list: (
+      <>
+        <path d="M8 6h13M8 12h13M8 18h13" />
+        <circle cx="4" cy="6" r="1" />
+        <circle cx="4" cy="12" r="1" />
+        <circle cx="4" cy="18" r="1" />
+      </>
+    ),
+    download: (
+      <>
+        <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+        <path d="M4 17v3h16v-3" />
+      </>
+    ),
+    logout: (
+      <>
+        <path d="m10 17 5-5-5-5" />
+        <path d="M15 12H3" />
+        <path d="M11 4h7a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-7" />
+      </>
+    ),
+    search: (
+      <>
+        <circle cx="11" cy="11" r="7" />
+        <path d="m20 20-3.2-3.2" />
+      </>
+    ),
+    wallet: (
+      <>
+        <rect x="3" y="6" width="18" height="13" rx="2" />
+        <path d="M3 10h18M16 14h2" />
+      </>
+    ),
+    layers: (
+      <>
+        <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+        <path d="m3 13 9 5 9-5" />
+      </>
+    ),
+    trend: (
+      <>
+        <path d="m3 17 6-6 4 4 8-8" />
+        <path d="M15 7h6v6" />
+      </>
+    ),
+    receipt: (
+      <>
+        <path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" />
+        <path d="M9 8h6M9 12h6" />
+      </>
+    ),
+    lock: (
+      <>
+        <rect x="5" y="10" width="14" height="10" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      </>
+    ),
+  }
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      {paths[name] || paths.grid}
+    </svg>
+  )
+}
+
 function summary(sales) {
   const totalPaid = sales.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0)
   const totalActual = sales.reduce((sum, s) => sum + Number(s.actual_price || 0), 0)
   const totalProfit = sales.reduce((sum, s) => sum + Number(s.profit || 0), 0)
   return { count: sales.length, totalPaid, totalActual, totalProfit }
+}
+
+function initials(name) {
+  return String(name || 'FF').trim().slice(0, 2).toUpperCase()
+}
+
+function formatDate(value) {
+  return new Date(`${String(value).slice(0, 10)}T12:00:00`).toLocaleDateString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 function ProductPicker({ products, selected, onSelect }) {
@@ -35,14 +135,18 @@ function ProductPicker({ products, selected, onSelect }) {
 
   return (
     <div className="picker" ref={boxRef}>
-      <input
-        value={open ? query : selected?.name || ''}
-        placeholder={products.length ? 'Search product name…' : 'Loading catalogue…'}
-        onFocus={() => { setOpen(true); setQuery('') }}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
-        aria-label="Search product"
-        autoComplete="off"
-      />
+      <div className="input-with-icon">
+        <Icon name="search" size={16} />
+        <input
+          value={open ? query : selected?.name || ''}
+          placeholder={products.length ? 'Search product name or category…' : 'Loading catalogue…'}
+          onFocus={() => { setOpen(true); setQuery('') }}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+          aria-label="Search product"
+          aria-expanded={open}
+          autoComplete="off"
+        />
+      </div>
       {open && (
         <div className="picker-menu" role="listbox">
           {matches.length === 0 && <div className="picker-empty">No product found</div>}
@@ -70,6 +174,7 @@ function Dashboard({ user, onLogout }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [activeNav, setActiveNav] = useState('overview')
 
   const [form, setForm] = useState({ saleDate: today, product: null, variantId: '', amountPaid: '', note: '' })
   const [dateFilter, setDateFilter] = useState('')
@@ -87,6 +192,7 @@ function Dashboard({ user, onLogout }) {
         setProducts(catalog.products)
         setCatalogMeta(catalog)
         setSales(salesData.sales)
+        setError('')
         setLoading(false)
       })
       .catch((err) => { setError(err.message); setLoading(false) })
@@ -115,6 +221,24 @@ function Dashboard({ user, onLogout }) {
   }, [sales, dateFilter, searchFilter])
 
   const totals = summary(filteredSales)
+
+  const scrollToForm = () => {
+    setActiveNav('record-form')
+    document.getElementById('record-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const navItems = [
+    { id: 'overview', label: 'Overview', icon: 'grid', href: '#overview' },
+    { id: 'record-form', label: 'Record sale', icon: 'plus', href: '#record-form' },
+    { id: 'records', label: 'Records', icon: 'list', href: '#records' },
+  ]
+
+  const statCards = [
+    { label: 'Records shown', value: loading ? '—' : String(totals.count), hint: 'In current filter', icon: 'receipt' },
+    { label: 'Total paid', value: loading ? '—' : formatNaira(totals.totalPaid), hint: 'Cash received', icon: 'wallet' },
+    { label: 'Actual/source total', value: loading ? '—' : formatNaira(totals.totalActual), hint: 'Supplier cost', icon: 'layers' },
+    { label: 'Total profit', value: loading ? '—' : formatNaira(totals.totalProfit), hint: 'Paid minus cost', icon: 'trend', tone: 'profit' },
+  ]
 
   const submit = async (e) => {
     e.preventDefault()
@@ -160,7 +284,7 @@ function Dashboard({ user, onLogout }) {
       note: sale.note || '',
     })
     setEditingId(sale.id)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    scrollToForm()
   }
 
   const remove = async (id) => {
@@ -171,124 +295,261 @@ function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">FAYFASHIONCART</p>
-          <h1>Sales Book</h1>
+    <div className="app-layout">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark">F</span>
+          <span className="brand-copy">
+            <strong>FayFashionCart</strong>
+            <small>Sales workspace</small>
+          </span>
         </div>
-        <div className="top-actions">
-          <span className="session-user">Signed in as <strong>{user}</strong></span>
-          <a className="button ghost" href="/api/sales/export" download="fayfashion-sales.csv">Export CSV</a>
-          <button className="button ghost" onClick={onLogout}>Log out</button>
-          <button className="button primary" onClick={() => document.getElementById('record-form')?.scrollIntoView({ behavior: 'smooth' })}>+ Record sale</button>
-        </div>
-      </header>
 
-      {notice && <div className="notice ok">{notice}</div>}
-      {error && <div className="notice error">{error}</div>}
+        <nav className="sidebar-nav" aria-label="Primary navigation">
+          <p className="nav-label">Workspace</p>
+          {navItems.map((item) => (
+            <a
+              key={item.id}
+              href={item.href}
+              className={`nav-link ${activeNav === item.id ? 'active' : ''}`}
+              aria-current={activeNav === item.id ? 'page' : undefined}
+              onClick={() => setActiveNav(item.id)}
+            >
+              <Icon name={item.icon} size={17} />
+              {item.label}
+            </a>
+          ))}
+          <p className="nav-label">Data</p>
+          <a className="nav-link" href="/api/sales/export" download="fayfashion-sales.csv">
+            <Icon name="download" size={17} />
+            Export CSV
+          </a>
+        </nav>
 
-      <section className="stats">
-        <article><span>Records shown</span><strong>{totals.count}</strong></article>
-        <article><span>Total paid</span><strong>{formatNaira(totals.totalPaid)}</strong></article>
-        <article><span>Actual/source total</span><strong>{formatNaira(totals.totalActual)}</strong></article>
-        <article className="profit"><span>Total profit</span><strong>{formatNaira(totals.totalProfit)}</strong></article>
-      </section>
-
-      <section className="card form-card" id="record-form">
-        <div className="card-head">
-          <div>
-            <h2>{editingId ? 'Edit sale' : 'Record a sale'}</h2>
-            <p>Choose the product, enter what the customer paid, and profit is calculated from the supplier price.</p>
+        <div className="sidebar-foot">
+          <div className="user-chip">
+            <span className="user-avatar">{initials(user)}</span>
+            <span className="user-copy">
+              <strong>{user}</strong>
+              <small>Administrator</small>
+            </span>
           </div>
-          <div className="catalog-status">
-            {catalogMeta ? `Catalogue: ${catalogMeta.total} products · synced ${catalogMeta.syncedAt ? new Date(catalogMeta.syncedAt).toLocaleDateString() : 'recently'}` : loading ? 'Loading catalogue…' : 'Catalogue unavailable'}
-          </div>
+          <button className="button ghost full" onClick={onLogout}>
+            <Icon name="logout" size={16} />
+            Log out
+          </button>
         </div>
-        <form onSubmit={submit} className="sale-form">
-          <label>Date<input type="date" value={form.saleDate} onChange={(e) => setForm({ ...form, saleDate: e.target.value })} /></label>
-          <label className="product-field">
-            Product
-            <ProductPicker
-              products={products}
-              selected={form.product}
-              onSelect={(p) => setForm({ ...form, product: p, variantId: '' })}
-            />
-          </label>
-          {form.product?.options?.length > 0 && (
-            <label>Variant
-              <select value={form.variantId} onChange={(e) => setForm({ ...form, variantId: e.target.value })}>
-                <option value="">Choose a variant…</option>
-                {form.product.options.map((o) => (
-                  <option key={o.id} value={o.id} disabled={o.inStock === false}>
-                    {o.label} — {formatNaira(o.websitePrice)}
-                  </option>
-                ))}
-              </select>
+      </aside>
+
+      <main className="workspace">
+        <header className="topbar">
+          <div className="page-heading">
+            <p className="eyebrow">PRIVATE WORKSPACE</p>
+            <h1>Sales Book</h1>
+            <p>Record daily sales, supplier cost, and profit in one secure place.</p>
+          </div>
+          <div className="top-actions">
+            <a className="button ghost" href="/api/sales/export" download="fayfashion-sales.csv">
+              <Icon name="download" size={16} />
+              Export CSV
+            </a>
+            <button className="button primary" onClick={scrollToForm}>
+              <Icon name="plus" size={16} />
+              Record sale
+            </button>
+          </div>
+        </header>
+
+        {notice && <div className="notice ok">{notice}</div>}
+        {error && <div className="notice error">{error}</div>}
+
+        <section className="overview" id="overview">
+          <div className="section-heading">
+            <h2>Overview</h2>
+            <span>Live totals for the current filter</span>
+          </div>
+          <div className="stats">
+            {statCards.map((stat) => (
+              <article className={`stat-card ${stat.tone || ''}`} key={stat.label}>
+                <div className="stat-top">
+                  <span>{stat.label}</span>
+                  <span className="stat-icon"><Icon name={stat.icon} size={17} /></span>
+                </div>
+                <strong className={stat.tone === 'profit' && totals.totalProfit < 0 ? 'negative' : ''}>{stat.value}</strong>
+                <small>{stat.hint}</small>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="card form-card" id="record-form">
+          <div className="card-head">
+            <div>
+              <h2>{editingId ? 'Edit sale' : 'Record a sale'}</h2>
+              <p>Choose the product, enter what the customer paid, and profit is calculated from the supplier price.</p>
+            </div>
+            <div className={`catalog-badge ${catalogMeta ? 'online' : loading ? 'loading' : 'offline'}`}>
+              <span className="status-dot" />
+              {catalogMeta
+                ? `${catalogMeta.total} products · synced ${catalogMeta.syncedAt ? new Date(catalogMeta.syncedAt).toLocaleDateString() : 'recently'}`
+                : loading ? 'Loading catalogue…' : 'Catalogue unavailable'}
+            </div>
+          </div>
+          <form onSubmit={submit} className="sale-form">
+            <label className="date-field">
+              Date
+              <input type="date" value={form.saleDate} onChange={(e) => setForm({ ...form, saleDate: e.target.value })} />
             </label>
-          )}
-          <label>Website price<input value={formatNaira(websitePrice)} readOnly /></label>
-          <label>Actual price<input value={formatNaira(actualPrice)} readOnly /></label>
-          <label>Amount paid<input type="number" min="0" step="1" value={form.amountPaid} placeholder="₦0" onChange={(e) => setForm({ ...form, amountPaid: e.target.value })} /></label>
-          <label>Profit<input className={profit < 0 ? 'negative' : ''} value={formatNaira(profit)} readOnly /></label>
-          <label className="note-field">Note<input value={form.note} placeholder="Optional" onChange={(e) => setForm({ ...form, note: e.target.value })} /></label>
-          <div className="form-actions">
-            <button className="button primary" type="submit">{editingId ? 'Save changes' : 'Add record'}</button>
-            {editingId && <button className="button ghost" type="button" onClick={() => { setEditingId(null); setForm({ saleDate: today, product: null, variantId: '', amountPaid: '', note: '' }) }}>Cancel</button>}
-          </div>
-        </form>
-      </section>
-
-      <section className="card table-card">
-        <div className="card-head compact">
-          <div><h2>All records</h2><p>Stored in the sales database — not in your browser.</p></div>
-          <div className="filters">
-            <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} aria-label="Filter by date" />
-            <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Filter product…" aria-label="Filter by product" />
-          </div>
-        </div>
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th><th>Product</th><th>Variant</th><th>Website price</th><th>Actual price</th><th>Amount paid</th><th>Profit</th><th>Note</th><th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredSales.length === 0 && <tr><td colSpan="9" className="empty">No sale records yet. Add one above.</td></tr>}
-              {filteredSales.map((s) => (
-                <tr key={s.id}>
-                  <td>{new Date(`${String(s.sale_date).slice(0, 10)}T12:00:00`).toLocaleDateString()}</td>
-                  <td><strong>{s.product_name}</strong></td>
-                  <td>{s.variant_label || '—'}</td>
-                  <td>{formatNaira(s.website_price)}</td>
-                  <td>{formatNaira(s.actual_price)}</td>
-                  <td>{formatNaira(s.amount_paid)}</td>
-                  <td className={Number(s.profit) < 0 ? 'negative' : 'positive'}>{formatNaira(s.profit)}</td>
-                  <td>{s.note || '—'}</td>
-                  <td className="row-actions">
-                    <button type="button" onClick={() => startEdit(s)} aria-label={`Edit ${s.product_name}`}>Edit</button>
-                    <button type="button" onClick={() => remove(s.id)} aria-label={`Delete ${s.product_name}`}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            {filteredSales.length > 0 && (
-              <tfoot>
-                <tr>
-                  <td colSpan="3">Totals ({totals.count})</td>
-                  <td>—</td>
-                  <td>{formatNaira(totals.totalActual)}</td>
-                  <td>{formatNaira(totals.totalPaid)}</td>
-                  <td className="positive">{formatNaira(totals.totalProfit)}</td>
-                  <td colSpan="2"></td>
-                </tr>
-              </tfoot>
+            <label className="product-field">
+              Product
+              <ProductPicker
+                products={products}
+                selected={form.product}
+                onSelect={(p) => setForm({ ...form, product: p, variantId: '' })}
+              />
+            </label>
+            {form.product?.options?.length > 0 && (
+              <label className="variant-field">
+                Variant
+                <select value={form.variantId} onChange={(e) => setForm({ ...form, variantId: e.target.value })}>
+                  <option value="">Choose a variant…</option>
+                  {form.product.options.map((o) => (
+                    <option key={o.id} value={o.id} disabled={o.inStock === false}>
+                      {o.label} — {formatNaira(o.websitePrice)}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
-          </table>
-        </div>
-      </section>
-      <p className="footer-note">Prices are read live from fayfashioncart.com.ng and the markup is reversed using the storefront's own price ladder.</p>
+            <label className="price-field">
+              Website price
+              <input value={formatNaira(websitePrice)} readOnly />
+            </label>
+            <label className="price-field">
+              Actual price
+              <input value={formatNaira(actualPrice)} readOnly />
+            </label>
+            <label className="amount-field">
+              Amount paid
+              <input type="number" min="0" step="1" value={form.amountPaid} placeholder="₦0" onChange={(e) => setForm({ ...form, amountPaid: e.target.value })} />
+            </label>
+            <label className="price-field">
+              Profit
+              <input className={profit < 0 ? 'negative' : ''} value={formatNaira(profit)} readOnly />
+            </label>
+            <label className="note-field">
+              Note
+              <input value={form.note} placeholder="Optional detail for this sale" onChange={(e) => setForm({ ...form, note: e.target.value })} />
+            </label>
+            <div className="form-actions">
+              {editingId && (
+                <button className="button ghost" type="button" onClick={() => { setEditingId(null); setForm({ saleDate: today, product: null, variantId: '', amountPaid: '', note: '' }) }}>
+                  Cancel
+                </button>
+              )}
+              <button className="button primary" type="submit">
+                <Icon name={editingId ? 'receipt' : 'plus'} size={16} />
+                {editingId ? 'Save changes' : 'Add record'}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="card table-card" id="records">
+          <div className="card-head compact">
+            <div>
+              <h2>All records</h2>
+              <p>Stored in the sales database — not in your browser.</p>
+            </div>
+            <div className="filters">
+              <label className="filter-field">
+                <Icon name="receipt" size={15} />
+                <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} aria-label="Filter by date" />
+              </label>
+              <label className="filter-field">
+                <Icon name="search" size={15} />
+                <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Filter product…" aria-label="Filter by product" />
+              </label>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <caption className="sr-only">FayFashionCart sale records</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Product</th>
+                  <th scope="col">Variant</th>
+                  <th scope="col">Website price</th>
+                  <th scope="col">Actual price</th>
+                  <th scope="col">Amount paid</th>
+                  <th scope="col">Profit</th>
+                  <th scope="col">Note</th>
+                  <th scope="col"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr>
+                    <td colSpan="9">
+                      <div className="empty-state">
+                        <span className="empty-icon"><Icon name="list" size={22} /></span>
+                        <strong>Loading records…</strong>
+                        <span>Fetching your sales from the database.</span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {!loading && filteredSales.length === 0 && (
+                  <tr>
+                    <td colSpan="9">
+                      <div className="empty-state">
+                        <span className="empty-icon"><Icon name="receipt" size={22} /></span>
+                        <strong>No sale records yet</strong>
+                        <span>Record your first sale to see totals and profit here.</span>
+                        <button className="button primary" type="button" onClick={scrollToForm}>Record first sale</button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {!loading && filteredSales.map((s) => (
+                  <tr key={s.id}>
+                    <td>{formatDate(s.sale_date)}</td>
+                    <td><strong>{s.product_name}</strong></td>
+                    <td>{s.variant_label || '—'}</td>
+                    <td>{formatNaira(s.website_price)}</td>
+                    <td>{formatNaira(s.actual_price)}</td>
+                    <td>{formatNaira(s.amount_paid)}</td>
+                    <td className={Number(s.profit) < 0 ? 'negative' : 'positive'}>{formatNaira(s.profit)}</td>
+                    <td>{s.note || '—'}</td>
+                    <td className="row-actions">
+                      <button type="button" onClick={() => startEdit(s)} aria-label={`Edit ${s.product_name}`}>Edit</button>
+                      <button type="button" onClick={() => remove(s.id)} aria-label={`Delete ${s.product_name}`}>Delete</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {!loading && filteredSales.length > 0 && (
+                <tfoot>
+                  <tr>
+                    <td colSpan="3">Totals ({totals.count})</td>
+                    <td>—</td>
+                    <td>{formatNaira(totals.totalActual)}</td>
+                    <td>{formatNaira(totals.totalPaid)}</td>
+                    <td className={totals.totalProfit < 0 ? 'negative' : 'positive'}>{formatNaira(totals.totalProfit)}</td>
+                    <td colSpan="2"></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </section>
+
+        <footer className="footer-note">
+          <Icon name="lock" size={14} />
+          Prices are read live from fayfashioncart.com.ng and the markup is reversed using the storefront's own price ladder.
+        </footer>
+      </main>
     </div>
   )
 }
@@ -313,7 +574,14 @@ export default function App() {
     try { await api.logout() } finally { setSession({ status: 'guest', username: '' }) }
   }
 
-  if (session.status === 'loading') return <main className="auth-loading">Checking session…</main>
+  if (session.status === 'loading') {
+    return (
+      <main className="auth-loading">
+        <span className="brand-mark">F</span>
+        <span>Preparing your workspace…</span>
+      </main>
+    )
+  }
   if (session.status !== 'authenticated') {
     return <Login onSuccess={(username) => setSession({ status: 'authenticated', username })} />
   }
