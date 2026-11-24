@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
-import { formatNaira, priceMarkup, reverseMarkup } from '../shared/pricing.js'
+import { balanceDue, formatNaira, paymentLabel, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
 import { checkCredentials, clearSessionCookie, createSessionToken, credentialsConfigured, readSession, sessionCookie } from '../shared/auth.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -27,6 +27,7 @@ db.exec(`
     product_name TEXT NOT NULL,
     variant_id TEXT,
     variant_label TEXT,
+    customer_name TEXT DEFAULT '',
     website_price REAL NOT NULL,
     actual_price REAL NOT NULL,
     amount_paid REAL NOT NULL,
@@ -38,6 +39,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);
   CREATE INDEX IF NOT EXISTS idx_sales_product ON sales(product_name);
 `)
+
+const saleColumns = db.prepare('PRAGMA table_info(sales)').all().map((column) => column.name)
+if (!saleColumns.includes('customer_name')) {
+  db.exec(`ALTER TABLE sales ADD COLUMN customer_name TEXT DEFAULT ''`)
+}
 
 let catalogCache = { data: null, fetchedAt: 0 }
 
@@ -105,6 +111,17 @@ function money(value) {
   return Number.isFinite(n) ? Math.round(n) : 0
 }
 
+function publicSale(row) {
+  const websitePrice = Number(row.website_price) || 0
+  const amountPaid = Number(row.amount_paid) || 0
+  return {
+    ...row,
+    customer_name: row.customer_name || '',
+    balance_due: balanceDue(websitePrice, amountPaid),
+    payment_status: paymentStatus(websitePrice, amountPaid),
+  }
+}
+
 function send(res, status, body) {
   const payload = typeof body === 'string' ? body : JSON.stringify(body)
   res.writeHead(status, {
@@ -135,13 +152,20 @@ const routes = {
   },
 
   async '/api/sales/export'() {
-    const rows = db.prepare('SELECT sale_date, product_name, variant_label, website_price, actual_price, amount_paid, profit, note FROM sales ORDER BY sale_date DESC, id DESC').all()
+    const rows = db.prepare(`
+      SELECT sale_date, customer_name, product_name, variant_label, website_price,
+             MAX(0, website_price - amount_paid) AS balance_due,
+             amount_paid, profit, note
+      FROM sales ORDER BY sale_date DESC, id DESC
+    `).all()
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const csv = [
-      'Date,Product,Variant,Website Price,Actual Price,Amount Paid,Profit,Note',
+      'Date,Customer,Product,Variant,Website Price,Amount Paid,Balance Due,Payment Status,Profit,Note',
       ...rows.map((r) => [
-        r.sale_date, r.product_name, r.variant_label, r.website_price,
-        r.actual_price, r.amount_paid, r.profit, r.note,
+        r.sale_date, r.customer_name || '', r.product_name, r.variant_label, r.website_price,
+        r.amount_paid, r.balance_due,
+        paymentLabel(paymentStatus(r.website_price, r.amount_paid)),
+        r.profit, r.note,
       ].map(esc).join(',')),
     ].join('\n')
     return csv
@@ -176,7 +200,7 @@ async function handleApi(req, res, pathname) {
   if (route) return send(res, 200, await route())
 
   if (pathname === '/api/sales' && req.method === 'GET') {
-    const rows = db.prepare('SELECT * FROM sales ORDER BY sale_date DESC, id DESC').all()
+    const rows = db.prepare('SELECT * FROM sales ORDER BY sale_date DESC, id DESC').all().map(publicSale)
     return send(res, 200, { sales: rows })
   }
 
@@ -185,6 +209,7 @@ async function handleApi(req, res, pathname) {
     const productId = String(b.productId || '')
     const variantId = b.variantId ? String(b.variantId) : null
     const saleDate = String(b.saleDate || '').slice(0, 10)
+    const customerName = String(b.customerName || '').trim()
     const amountPaid = money(b.amountPaid)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) return send(res, 400, { error: 'A valid sale date is required.' })
     if (!productId || !String(b.productName || '').trim()) return send(res, 400, { error: 'Choose a product.' })
@@ -202,17 +227,20 @@ async function handleApi(req, res, pathname) {
         }
       } catch {}
     }
+    if (balanceDue(websitePrice, amountPaid) > 0 && !customerName) {
+      return send(res, 400, { error: 'Add the customer name because this sale has a balance.' })
+    }
     const actualPrice = reverseMarkup(websitePrice)
     const profit = amountPaid - actualPrice
     const result = db.prepare(`
-      INSERT INTO sales (sale_date, product_id, product_name, variant_id, variant_label, website_price, actual_price, amount_paid, profit, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sales (sale_date, product_id, product_name, variant_id, variant_label, customer_name, website_price, actual_price, amount_paid, profit, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      saleDate, productId, String(b.productName).trim(), variantId, b.variantLabel || '',
+      saleDate, productId, String(b.productName).trim(), variantId, b.variantLabel || '', customerName,
       websitePrice, actualPrice, amountPaid, profit, String(b.note || '').trim(),
     )
     const row = db.prepare('SELECT * FROM sales WHERE id = ?').get(Number(result.lastInsertRowid))
-    return send(res, 201, { sale: row })
+    return send(res, 201, { sale: publicSale(row) })
   }
 
   if (pathname.startsWith('/api/sales/') && req.method === 'DELETE') {
@@ -226,14 +254,21 @@ async function handleApi(req, res, pathname) {
     const id = Number(pathname.split('/').pop())
     const b = await bodyJson(req)
     if (!id) return send(res, 400, { error: 'Invalid sale id.' })
+    const websitePrice = money(b.websitePrice)
     const amountPaid = money(b.amountPaid)
-    const actualPrice = reverseMarkup(money(b.websitePrice))
+    const customerName = String(b.customerName || '').trim()
+    if (!websitePrice) return send(res, 400, { error: 'Website price is required.' })
+    if (!Number.isFinite(Number(b.amountPaid))) return send(res, 400, { error: 'Amount paid is required.' })
+    if (balanceDue(websitePrice, amountPaid) > 0 && !customerName) {
+      return send(res, 400, { error: 'Add the customer name because this sale has a balance.' })
+    }
+    const actualPrice = reverseMarkup(websitePrice)
     db.prepare(`
       UPDATE sales
-      SET amount_paid = ?, website_price = ?, actual_price = ?, profit = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+      SET customer_name = ?, amount_paid = ?, website_price = ?, actual_price = ?, profit = ?, note = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(amountPaid, money(b.websitePrice), actualPrice, amountPaid - actualPrice, String(b.note || ''), id)
-    return send(res, 200, { sale: db.prepare('SELECT * FROM sales WHERE id = ?').get(id) })
+    `).run(customerName, amountPaid, websitePrice, actualPrice, amountPaid - actualPrice, String(b.note || ''), id)
+    return send(res, 200, { sale: publicSale(db.prepare('SELECT * FROM sales WHERE id = ?').get(id)) })
   }
 
   return send(res, 404, { error: 'Not found' })

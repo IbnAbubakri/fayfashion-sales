@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import Login from './Login'
-import { formatNaira } from '../shared/pricing'
+import { balanceDue, formatNaira, paymentLabel, paymentStatus } from '../shared/pricing'
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -67,6 +67,12 @@ function Icon({ name, size = 18 }) {
         <path d="M9 8h6M9 12h6" />
       </>
     ),
+    alert: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 8v5M12 16h.01" />
+      </>
+    ),
     lock: (
       <>
         <rect x="5" y="10" width="14" height="10" rx="2" />
@@ -94,10 +100,13 @@ function Icon({ name, size = 18 }) {
 }
 
 function summary(sales) {
+  const totalWebsite = sales.reduce((sum, s) => sum + Number(s.website_price || 0), 0)
   const totalPaid = sales.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0)
   const totalActual = sales.reduce((sum, s) => sum + Number(s.actual_price || 0), 0)
   const totalProfit = sales.reduce((sum, s) => sum + Number(s.profit || 0), 0)
-  return { count: sales.length, totalPaid, totalActual, totalProfit }
+  const totalBalance = sales.reduce((sum, s) => sum + balanceDue(s.website_price, s.amount_paid), 0)
+  const balanceCount = sales.filter((s) => balanceDue(s.website_price, s.amount_paid) > 0).length
+  return { count: sales.length, totalWebsite, totalPaid, totalActual, totalProfit, totalBalance, balanceCount }
 }
 
 function initials(name) {
@@ -176,9 +185,10 @@ function Dashboard({ user, onLogout }) {
   const [notice, setNotice] = useState('')
   const [activeNav, setActiveNav] = useState('overview')
 
-  const [form, setForm] = useState({ saleDate: today, product: null, variantId: '', amountPaid: '', note: '' })
+  const [form, setForm] = useState({ saleDate: today, customerName: '', product: null, variantId: '', amountPaid: '', note: '' })
   const [dateFilter, setDateFilter] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
+  const [paymentFilter, setPaymentFilter] = useState('')
   const [editingId, setEditingId] = useState(null)
 
   const reloadSales = async () => {
@@ -209,16 +219,19 @@ function Dashboard({ user, onLogout }) {
   // The API supplies the supplier price with the catalogue, so the form and the
   // saved record always use the same markup ladder.
   const actualPrice = selectedVariant?.actualPrice ?? form.product?.actualPrice ?? 0
+  const balance = balanceDue(websitePrice, Number(form.amountPaid) || 0)
+  const status = paymentStatus(websitePrice, Number(form.amountPaid) || 0)
   const profit = (Number(form.amountPaid) || 0) - actualPrice
 
   const filteredSales = useMemo(() => {
     const needle = searchFilter.trim().toLowerCase()
     return sales.filter((s) => {
       if (dateFilter && s.sale_date !== dateFilter) return false
-      if (needle && !(`${s.product_name} ${s.variant_label || ''}`.toLowerCase().includes(needle))) return false
+      if (paymentFilter && paymentStatus(s.website_price, s.amount_paid) !== paymentFilter) return false
+      if (needle && !(`${s.customer_name || ''} ${s.product_name} ${s.variant_label || ''}`.toLowerCase().includes(needle))) return false
       return true
     })
-  }, [sales, dateFilter, searchFilter])
+  }, [sales, dateFilter, paymentFilter, searchFilter])
 
   const totals = summary(filteredSales)
 
@@ -236,7 +249,13 @@ function Dashboard({ user, onLogout }) {
   const statCards = [
     { label: 'Records shown', value: loading ? '—' : String(totals.count), hint: 'In current filter', icon: 'receipt' },
     { label: 'Total paid', value: loading ? '—' : formatNaira(totals.totalPaid), hint: 'Cash received', icon: 'wallet' },
-    { label: 'Actual/source total', value: loading ? '—' : formatNaira(totals.totalActual), hint: 'Supplier cost', icon: 'layers' },
+    {
+      label: 'Balance due',
+      value: loading ? '—' : formatNaira(totals.totalBalance),
+      hint: loading ? 'Tracking unpaid amounts' : `${totals.balanceCount} record${totals.balanceCount === 1 ? '' : 's'} owing`,
+      icon: 'alert',
+      tone: 'balance',
+    },
     { label: 'Total profit', value: loading ? '—' : formatNaira(totals.totalProfit), hint: 'Paid minus cost', icon: 'trend', tone: 'profit' },
   ]
 
@@ -246,9 +265,11 @@ function Dashboard({ user, onLogout }) {
     if (!form.product) return setError('Choose a product first.')
     if (!form.saleDate) return setError('Choose the sale date.')
     if (form.amountPaid === '') return setError('Enter the amount paid by the customer.')
+    if (balance > 0 && !form.customerName.trim()) return setError('Add the customer name because this sale has a balance.')
     try {
       const payload = {
         saleDate: form.saleDate,
+        customerName: form.customerName.trim(),
         productId: form.product.id,
         productName: form.product.name,
         variantId: form.variantId || null,
@@ -261,7 +282,7 @@ function Dashboard({ user, onLogout }) {
       else await api.addSale(payload)
       await reloadSales()
       setNotice(editingId ? 'Sale updated.' : 'Sale recorded.')
-      setForm({ saleDate: today, product: null, variantId: '', amountPaid: '', note: '' })
+      setForm({ saleDate: today, customerName: '', product: null, variantId: '', amountPaid: '', note: '' })
       setEditingId(null)
     } catch (err) {
       setError(err.message)
@@ -278,6 +299,7 @@ function Dashboard({ user, onLogout }) {
     }
     setForm({
       saleDate: sale.sale_date,
+      customerName: sale.customer_name || '',
       product,
       variantId: sale.variant_id || '',
       amountPaid: String(sale.amount_paid),
@@ -386,7 +408,7 @@ function Dashboard({ user, onLogout }) {
           <div className="card-head">
             <div>
               <h2>{editingId ? 'Edit sale' : 'Record a sale'}</h2>
-              <p>Choose the product, enter what the customer paid, and profit is calculated from the supplier price.</p>
+              <p>Add the customer name when a payment is not in full. The balance due is calculated from the website price.</p>
             </div>
             <div className={`catalog-badge ${catalogMeta ? 'online' : loading ? 'loading' : 'offline'}`}>
               <span className="status-dot" />
@@ -399,6 +421,15 @@ function Dashboard({ user, onLogout }) {
             <label className="date-field">
               Date
               <input type="date" value={form.saleDate} onChange={(e) => setForm({ ...form, saleDate: e.target.value })} />
+            </label>
+            <label className="customer-field">
+              Customer name
+              <input
+                value={form.customerName}
+                placeholder="Required if they still owe"
+                autoComplete="name"
+                onChange={(e) => setForm({ ...form, customerName: e.target.value })}
+              />
             </label>
             <label className="product-field">
               Product
@@ -433,6 +464,11 @@ function Dashboard({ user, onLogout }) {
               Amount paid
               <input type="number" min="0" step="1" value={form.amountPaid} placeholder="₦0" onChange={(e) => setForm({ ...form, amountPaid: e.target.value })} />
             </label>
+            <label className={`balance-field ${balance > 0 ? 'due' : ''}`}>
+              Balance due
+              <input className={balance > 0 ? 'due' : ''} value={formatNaira(balance)} readOnly />
+              <small className={`field-hint ${status}`}>{paymentLabel(status)}</small>
+            </label>
             <label className="price-field">
               Profit
               <input className={profit < 0 ? 'negative' : ''} value={formatNaira(profit)} readOnly />
@@ -443,7 +479,7 @@ function Dashboard({ user, onLogout }) {
             </label>
             <div className="form-actions">
               {editingId && (
-                <button className="button ghost" type="button" onClick={() => { setEditingId(null); setForm({ saleDate: today, product: null, variantId: '', amountPaid: '', note: '' }) }}>
+                <button className="button ghost" type="button" onClick={() => { setEditingId(null); setForm({ saleDate: today, customerName: '', product: null, variantId: '', amountPaid: '', note: '' }) }}>
                   Cancel
                 </button>
               )}
@@ -467,8 +503,16 @@ function Dashboard({ user, onLogout }) {
                 <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} aria-label="Filter by date" />
               </label>
               <label className="filter-field">
+                <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} aria-label="Filter by payment status">
+                  <option value="">All payments</option>
+                  <option value="paid">Paid</option>
+                  <option value="partial">Partial</option>
+                  <option value="unpaid">Unpaid</option>
+                </select>
+              </label>
+              <label className="filter-field">
                 <Icon name="search" size={15} />
-                <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Filter product…" aria-label="Filter by product" />
+                <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Filter customer or product…" aria-label="Filter by customer or product" />
               </label>
             </div>
           </div>
@@ -478,11 +522,11 @@ function Dashboard({ user, onLogout }) {
               <thead>
                 <tr>
                   <th scope="col">Date</th>
+                  <th scope="col">Customer</th>
                   <th scope="col">Product</th>
-                  <th scope="col">Variant</th>
                   <th scope="col">Website price</th>
-                  <th scope="col">Actual price</th>
                   <th scope="col">Amount paid</th>
+                  <th scope="col">Balance due</th>
                   <th scope="col">Profit</th>
                   <th scope="col">Note</th>
                   <th scope="col"><span className="sr-only">Actions</span></th>
@@ -506,36 +550,50 @@ function Dashboard({ user, onLogout }) {
                       <div className="empty-state">
                         <span className="empty-icon"><Icon name="receipt" size={22} /></span>
                         <strong>No sale records yet</strong>
-                        <span>Record your first sale to see totals and profit here.</span>
+                        <span>Record a sale to see totals, profit, and unpaid balances here.</span>
                         <button className="button primary" type="button" onClick={scrollToForm}>Record first sale</button>
                       </div>
                     </td>
                   </tr>
                 )}
-                {!loading && filteredSales.map((s) => (
-                  <tr key={s.id}>
-                    <td>{formatDate(s.sale_date)}</td>
-                    <td><strong>{s.product_name}</strong></td>
-                    <td>{s.variant_label || '—'}</td>
-                    <td>{formatNaira(s.website_price)}</td>
-                    <td>{formatNaira(s.actual_price)}</td>
-                    <td>{formatNaira(s.amount_paid)}</td>
-                    <td className={Number(s.profit) < 0 ? 'negative' : 'positive'}>{formatNaira(s.profit)}</td>
-                    <td>{s.note || '—'}</td>
-                    <td className="row-actions">
-                      <button type="button" onClick={() => startEdit(s)} aria-label={`Edit ${s.product_name}`}>Edit</button>
-                      <button type="button" onClick={() => remove(s.id)} aria-label={`Delete ${s.product_name}`}>Delete</button>
-                    </td>
-                  </tr>
-                ))}
+                {!loading && filteredSales.map((s) => {
+                  const rowBalance = balanceDue(s.website_price, s.amount_paid)
+                  const rowStatus = paymentStatus(s.website_price, s.amount_paid)
+                  return (
+                    <tr key={s.id}>
+                      <td>{formatDate(s.sale_date)}</td>
+                      <td className={!s.customer_name && rowBalance > 0 ? 'missing-customer' : ''}>
+                        {s.customer_name || (rowBalance > 0 ? 'Unknown' : '—')}
+                      </td>
+                      <td>
+                        <span className="product-cell">
+                          <strong>{s.product_name}</strong>
+                          {s.variant_label && <small>{s.variant_label}</small>}
+                        </span>
+                      </td>
+                      <td>{formatNaira(s.website_price)}</td>
+                      <td>{formatNaira(s.amount_paid)}</td>
+                      <td className="balance-cell">
+                        <span className={rowBalance > 0 ? 'balance-due' : ''}>{formatNaira(rowBalance)}</span>
+                        <span className={`status-pill ${rowStatus}`}>{paymentLabel(rowStatus)}</span>
+                      </td>
+                      <td className={Number(s.profit) < 0 ? 'negative' : 'positive'}>{formatNaira(s.profit)}</td>
+                      <td>{s.note || '—'}</td>
+                      <td className="row-actions">
+                        <button type="button" onClick={() => startEdit(s)} aria-label={`Edit ${s.product_name}`}>Edit</button>
+                        <button type="button" onClick={() => remove(s.id)} aria-label={`Delete ${s.product_name}`}>Delete</button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
               {!loading && filteredSales.length > 0 && (
                 <tfoot>
                   <tr>
                     <td colSpan="3">Totals ({totals.count})</td>
-                    <td>—</td>
-                    <td>{formatNaira(totals.totalActual)}</td>
+                    <td>{formatNaira(totals.totalWebsite)}</td>
                     <td>{formatNaira(totals.totalPaid)}</td>
+                    <td className={totals.totalBalance > 0 ? 'balance-due' : ''}>{formatNaira(totals.totalBalance)}</td>
                     <td className={totals.totalProfit < 0 ? 'negative' : 'positive'}>{formatNaira(totals.totalProfit)}</td>
                     <td colSpan="2"></td>
                   </tr>

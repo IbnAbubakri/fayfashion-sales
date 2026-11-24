@@ -41,12 +41,15 @@ a { color: inherit; }
 
 .sr-only {
   position: absolute;
+  top: 0;
+  left: 0;
   width: 1px;
   height: 1px;
   padding: 0;
   margin: -1px;
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }
@@ -240,6 +243,8 @@ a { color: inherit; }
   box-shadow: var(--shadow-sm);
 }
 .stat-card.profit { border-color: #bfe0cb; background: var(--surface-tint); }
+.stat-card.balance { border-color: #efd8b5; background: #fffaf3; }
+.stat-card.balance .stat-icon { background: #fff0da; color: var(--warning); }
 .stat-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .stat-top > span:first-child { color: var(--muted-strong); font-size: 12px; font-weight: 650; }
 .stat-icon {
@@ -326,15 +331,18 @@ a { color: inherit; }
   font-weight: 700;
 }
 .sale-form .date-field { grid-column: span 1; }
+.sale-form .customer-field { grid-column: span 2; }
 .sale-form .product-field { grid-column: span 3; }
 .sale-form .variant-field { grid-column: span 2; }
 .sale-form .price-field { grid-column: span 1; }
 .sale-form .amount-field { grid-column: span 1; }
+.sale-form .balance-field { grid-column: span 1; }
 .sale-form .note-field { grid-column: span 2; }
 
 .sale-form input,
 .sale-form select,
 .filters input,
+.filters select,
 .input-with-icon input {
   width: 100%;
   min-width: 0;
@@ -351,11 +359,17 @@ a { color: inherit; }
 .sale-form input:focus,
 .sale-form select:focus,
 .filters input:focus,
+.filters select:focus,
 .input-with-icon input:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(23, 102, 61, .12);
 }
 .sale-form input[readonly] { background: var(--surface-muted); color: var(--muted-strong); font-variant-numeric: tabular-nums; }
+.sale-form .balance-field.due input[readonly] { background: #fffaf3; border-color: #efd8b5; color: var(--warning); font-weight: 750; }
+.field-hint { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.field-hint.paid { color: var(--positive); }
+.field-hint.partial { color: var(--warning); }
+.field-hint.unpaid { color: var(--negative); }
 .sale-form input::placeholder, .filters input::placeholder { color: #9aa69d; }
 
 .input-with-icon { position: relative; }
@@ -424,8 +438,10 @@ a { color: inherit; }
 .filter-field input { min-height: 36px; padding-left: 32px; font-size: 12px; }
 .filter-field input[type="date"] { padding-left: 10px; }
 .filter-field input[type="date"]::-webkit-calendar-picker-indicator { cursor: pointer; opacity: .55; }
+.filter-field select { min-height: 36px; padding: 0 10px; font-size: 12px; cursor: pointer; }
 
-.table-wrap { width: 100%; overflow-x: auto; }
+.table-card { overflow: hidden; }
+.table-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
 table { width: 100%; min-width: 1000px; border-collapse: collapse; font-size: 12px; }
 th, td { padding: 13px 16px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
 th {
@@ -440,6 +456,23 @@ tbody tr { transition: background .14s ease; }
 tbody tr:hover { background: #fbfdfb; }
 tbody tr:last-child td { border-bottom: 0; }
 td strong { font-weight: 700; color: var(--ink); }
+.product-cell { display: flex; flex-direction: column; gap: 3px; }
+.product-cell small { color: var(--muted); font-size: 11px; }
+.balance-cell { display: flex; align-items: center; gap: 8px; }
+.balance-due { color: var(--warning) !important; font-weight: 750; }
+.missing-customer { color: var(--negative) !important; font-weight: 700; }
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+.status-pill.paid { background: var(--brand-soft); color: var(--positive); }
+.status-pill.partial { background: #fff1dd; color: var(--warning); }
+.status-pill.unpaid { background: #fff1f1; color: var(--negative); }
 tfoot td {
   background: var(--surface-tint);
   border-top: 2px solid #cfe4d6;
@@ -678,9 +711,10 @@ tfoot td {
   .card-head.compact { align-items: stretch; }
   .filters { width: 100%; }
   .filter-field { flex: 1; }
-  .filter-field input { width: 100%; }
+  .filter-field input, .filter-field select { width: 100%; }
   .sale-form { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 18px; }
   .sale-form .date-field,
+  .sale-form .customer-field,
   .sale-form .product-field,
   .sale-form .variant-field,
   .sale-form .note-field { grid-column: 1 / -1; }
@@ -696,7 +730,7 @@ tfoot td {
 @media (max-width: 420px) {
   .stats { grid-template-columns: minmax(0, 1fr); }
   .sale-form { grid-template-columns: minmax(0, 1fr); }
-  .sale-form .price-field, .sale-form .amount-field { grid-column: 1 / -1; }
+  .sale-form .price-field, .sale-form .amount-field, .sale-form .balance-field { grid-column: 1 / -1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

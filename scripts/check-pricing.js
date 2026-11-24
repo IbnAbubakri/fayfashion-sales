@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { priceMarkup, reverseMarkup } from '../shared/pricing.js'
+import { balanceDue, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
 
 const markups = [
   [0, 300], [999, 300],
@@ -20,4 +20,18 @@ for (const [base] of markups) {
   assert.equal(reverseMarkup(display), base, `reverse failed for base ${base} -> display ${display}`)
 }
 
-console.log(`Markup and reverse markup OK for ${markups.length} values`)
+for (const [website, paid, expected] of [
+  [6500, 7500, 0],
+  [6500, 6500, 0],
+  [6500, 4000, 2500],
+  [6500, 0, 6500],
+]) {
+  assert.equal(balanceDue(website, paid), expected, `balance failed for ${website}/${paid}`)
+}
+
+assert.equal(paymentStatus(6500, 7500), 'paid')
+assert.equal(paymentStatus(6500, 6500), 'paid')
+assert.equal(paymentStatus(6500, 4000), 'partial')
+assert.equal(paymentStatus(6500, 0), 'unpaid')
+
+console.log(`Markup, reverse markup, and balances OK for ${markups.length} values`)

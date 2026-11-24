@@ -1,6 +1,5 @@
 import { requireAuth } from '../../shared/auth.js'
-import { ensureTable, getSql, publicSale, readBody, send } from '../../shared/db.js'
-import { reverseMarkup } from '../../shared/pricing.js'
+import { ensureTable, getSql, normalizeUpdate, publicSale, readBody, send } from '../../shared/db.js'
 
 function idFrom(req) {
   return Number(req.query?.id || req.url?.split('?')[0]?.split('/').pop())
@@ -20,13 +19,11 @@ export default async function handler(req, res) {
 
     if (req.method === 'PATCH') {
       const b = await readBody(req)
-      const websitePrice = Math.round(Number(b.websitePrice) || 0)
-      const amountPaid = Math.round(Number(b.amountPaid) || 0)
-      const actualPrice = reverseMarkup(websitePrice)
+      const v = normalizeUpdate(b)
       const rows = await getSql()`
         UPDATE sales
-        SET amount_paid = ${amountPaid}, website_price = ${websitePrice}, actual_price = ${actualPrice},
-            profit = ${amountPaid - actualPrice}, note = ${String(b.note || '')}, updated_at = now()
+        SET customer_name = ${v.customerName}, amount_paid = ${v.amountPaid}, website_price = ${v.websitePrice},
+            actual_price = ${v.actualPrice}, profit = ${v.profit}, note = ${v.note}, updated_at = now()
         WHERE id = ${id}
         RETURNING *
       `

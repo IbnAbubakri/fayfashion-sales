@@ -29,6 +29,21 @@ export function reverseMarkup(displayPrice) {
   return display - 5000
 }
 
+export function balanceDue(websitePrice, amountPaid) {
+  const due = Math.round(Number(websitePrice) || 0) - Math.round(Number(amountPaid) || 0)
+  return Math.max(0, due)
+}
+
+export function paymentStatus(websitePrice, amountPaid) {
+  const paid = Math.round(Number(amountPaid) || 0)
+  if (paid <= 0) return 'unpaid'
+  return balanceDue(websitePrice, paid) > 0 ? 'partial' : 'paid'
+}
+
+export function paymentLabel(status) {
+  return { paid: 'Paid', partial: 'Partial', unpaid: 'Unpaid' }[status] || 'Paid'
+}
+
 export function formatNaira(value) {
   return `₦${Math.round(Number(value) || 0).toLocaleString('en-NG')}`
 }

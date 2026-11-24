@@ -6,7 +6,9 @@ A local sales/profit record book for FayFashionCart. It reads the current live c
 
 - Searchable product dropdown from the live FayFashionCart catalogue
 - Variant-aware pricing when a product has size/colour options
-- Website price, actual/source price, amount paid, and auto profit in a table
+- Website price, actual/source price, amount paid, balance due, and auto profit in a table
+- Customer name is saved whenever a sale is unpaid or partially paid
+- Outstanding balance total, payment status badges, and payment-status filters
 - Sales stored in Neon Postgres through Vercel serverless APIs (cloud persistence)
 - Local development can still use SQLite via `npm run dev`
 - Edit/delete records, filter by date/product, export CSV
@@ -41,6 +43,10 @@ The storefront stores supplier prices and adds a markup before display:
 | ≥ ₦50,000 | ₦5,000 |
 
 The record book reverses that markup from the displayed website price.
+
+## Balance rule
+
+`Balance due = max(0, website price − amount paid)`. A customer name is required when the balance is greater than zero, and the name and balance are included in CSV exports.
 
 ## Run locally
 
