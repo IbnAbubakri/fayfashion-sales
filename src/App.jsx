@@ -237,7 +237,7 @@ export default function App() {
 
       <section className="card table-card">
         <div className="card-head compact">
-          <div><h2>All records</h2><p>Stored in SQLite on this computer — not in your browser.</p></div>
+          <div><h2>All records</h2><p>Stored in the sales database — not in your browser.</p></div>
           <div className="filters">
             <input type="date" value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} aria-label="Filter by date" />
             <input value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)} placeholder="Filter product…" aria-label="Filter by product" />
@@ -254,7 +254,7 @@ export default function App() {
               {filteredSales.length === 0 && <tr><td colSpan="9" className="empty">No sale records yet. Add one above.</td></tr>}
               {filteredSales.map((s) => (
                 <tr key={s.id}>
-                  <td>{new Date(`${s.sale_date}T12:00:00`).toLocaleDateString()}</td>
+                  <td>{new Date(`${String(s.sale_date).slice(0, 10)}T12:00:00`).toLocaleDateString()}</td>
                   <td><strong>{s.product_name}</strong></td>
                   <td>{s.variant_label || '—'}</td>
                   <td>{formatNaira(s.website_price)}</td>

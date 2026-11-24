@@ -37,10 +37,16 @@ export async function ensureTable() {
   return tablePromise
 }
 
+function dateOnly(value) {
+  if (!value) return value
+  const text = value instanceof Date ? value.toISOString() : String(value)
+  return text.slice(0, 10)
+}
+
 export function publicSale(row) {
   return {
     id: Number(row.id),
-    sale_date: row.sale_date,
+    sale_date: dateOnly(row.sale_date),
     product_id: row.product_id,
     product_name: row.product_name,
     variant_id: row.variant_id,
