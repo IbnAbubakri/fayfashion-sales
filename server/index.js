@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
-import { balanceDue, formatNaira, paymentLabel, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
+import { balanceDue, formatNaira, lineTotal, normalizeQuantity, paymentLabel, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
 import { checkCredentials, clearSessionCookie, createSessionToken, credentialsConfigured, readSession, sessionCookie } from '../shared/auth.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -32,6 +32,7 @@ db.exec(`
     actual_price REAL NOT NULL,
     amount_paid REAL NOT NULL,
     profit REAL NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
     note TEXT DEFAULT '',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
@@ -53,6 +54,9 @@ db.exec(`
 const saleColumns = db.prepare('PRAGMA table_info(sales)').all().map((column) => column.name)
 if (!saleColumns.includes('customer_name')) {
   db.exec(`ALTER TABLE sales ADD COLUMN customer_name TEXT DEFAULT ''`)
+}
+if (!saleColumns.includes('quantity')) {
+  db.exec(`ALTER TABLE sales ADD COLUMN quantity INTEGER DEFAULT 1`)
 }
 
 let catalogCache = { data: null, fetchedAt: 0 }
@@ -128,14 +132,26 @@ function readPrice(value) {
   return Number.isFinite(n) && n >= 0 ? Math.round(n) : false
 }
 
+// Returns 1 when absent; false when the shopper entered an invalid quantity.
+function readQuantity(value) {
+  if (value === undefined || value === null || value === '') return 1
+  const n = Number(value)
+  return Number.isInteger(n) && n > 0 ? n : false
+}
+
 function publicSale(row) {
   const websitePrice = Number(row.website_price) || 0
+  const quantity = normalizeQuantity(row.quantity)
+  const websiteTotal = lineTotal(websitePrice, quantity)
   const amountPaid = Number(row.amount_paid) || 0
   return {
     ...row,
+    quantity,
+    website_total: websiteTotal,
+    actual_total: lineTotal(row.actual_price, quantity),
     customer_name: row.customer_name || '',
-    balance_due: balanceDue(websitePrice, amountPaid),
-    payment_status: paymentStatus(websitePrice, amountPaid),
+    balance_due: balanceDue(websiteTotal, amountPaid),
+    payment_status: paymentStatus(websiteTotal, amountPaid),
   }
 }
 
@@ -178,20 +194,22 @@ const routes = {
 
   async '/api/sales/export'() {
     const rows = db.prepare(`
-      SELECT sale_date, customer_name, product_name, variant_label, website_price,
-             MAX(0, website_price - amount_paid) AS balance_due,
-             amount_paid, profit, note
+      SELECT sale_date, customer_name, product_name, variant_label, quantity,
+             website_price, amount_paid, profit, note
       FROM sales ORDER BY sale_date DESC, id DESC
     `).all()
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
     const csv = [
-      'Date,Customer,Product,Variant,Website Price,Amount Paid,Balance Due,Payment Status,Profit,Note',
-      ...rows.map((r) => [
-        r.sale_date, r.customer_name || '', r.product_name, r.variant_label, r.website_price,
-        r.amount_paid, r.balance_due,
-        paymentLabel(paymentStatus(r.website_price, r.amount_paid)),
-        r.profit, r.note,
-      ].map(esc).join(',')),
+      'Date,Customer,Product,Variant,Quantity,Unit Price,Total Price,Amount Paid,Balance Due,Payment Status,Profit,Note',
+      ...rows.map((r) => {
+        const total = lineTotal(r.website_price, r.quantity)
+        const due = balanceDue(total, r.amount_paid)
+        return [
+          r.sale_date, r.customer_name || '', r.product_name, r.variant_label,
+          r.quantity || 1, r.website_price, total, r.amount_paid, due,
+          paymentLabel(paymentStatus(total, r.amount_paid)), r.profit, r.note,
+        ].map(esc).join(',')
+      }),
     ].join('\n')
     return csv
   },
@@ -242,9 +260,11 @@ async function handleApi(req, res, pathname) {
     const saleDate = String(b.saleDate || '').slice(0, 10)
     const customerName = String(b.customerName || '').trim()
     const amountPaid = money(b.amountPaid)
+    const quantity = readQuantity(b.quantity)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) return send(res, 400, { error: 'A valid sale date is required.' })
     if (!productId || !String(b.productName || '').trim()) return send(res, 400, { error: 'Choose a product.' })
     if (!Number.isFinite(Number(b.amountPaid)) || Number(b.amountPaid) < 0) return send(res, 400, { error: 'Amount paid is required.' })
+    if (quantity === false) return send(res, 400, { error: 'Quantity must be a whole number of at least 1.' })
 
     let websitePrice = readPrice(b.websitePrice)
     let actualPrice = readPrice(b.actualPrice)
@@ -263,16 +283,18 @@ async function handleApi(req, res, pathname) {
     }
     if (!websitePrice) return send(res, 400, { error: 'Website price is required.' })
     if (actualPrice === null) actualPrice = reverseMarkup(websitePrice)
-    if (balanceDue(websitePrice, amountPaid) > 0 && !customerName) {
+    const websiteTotal = lineTotal(websitePrice, quantity)
+    const actualTotal = lineTotal(actualPrice, quantity)
+    if (balanceDue(websiteTotal, amountPaid) > 0 && !customerName) {
       return send(res, 400, { error: 'Add the customer name because this sale has a balance.' })
     }
-    const profit = amountPaid - actualPrice
+    const profit = amountPaid - actualTotal
     const result = db.prepare(`
-      INSERT INTO sales (sale_date, product_id, product_name, variant_id, variant_label, customer_name, website_price, actual_price, amount_paid, profit, note)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sales (sale_date, product_id, product_name, variant_id, variant_label, customer_name, website_price, actual_price, amount_paid, profit, quantity, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       saleDate, productId, String(b.productName).trim(), variantId, b.variantLabel || '', customerName,
-      websitePrice, actualPrice, amountPaid, profit, String(b.note || '').trim(),
+      websitePrice, actualPrice, amountPaid, profit, quantity, String(b.note || '').trim(),
     )
     const row = db.prepare('SELECT * FROM sales WHERE id = ?').get(Number(result.lastInsertRowid))
     return send(res, 201, { sale: publicSale(row) })
@@ -293,19 +315,21 @@ async function handleApi(req, res, pathname) {
     const actualPriceInput = readPrice(b.actualPrice)
     const amountPaid = money(b.amountPaid)
     const customerName = String(b.customerName || '').trim()
+    const quantity = readQuantity(b.quantity)
     if (websitePrice === false) return send(res, 400, { error: 'Website price must be a valid amount.' })
     if (actualPriceInput === false) return send(res, 400, { error: 'Actual price must be a valid amount.' })
     if (!websitePrice) return send(res, 400, { error: 'Website price is required.' })
     if (!Number.isFinite(Number(b.amountPaid)) || Number(b.amountPaid) < 0) return send(res, 400, { error: 'Amount paid is required.' })
-    if (balanceDue(websitePrice, amountPaid) > 0 && !customerName) {
+    if (quantity === false) return send(res, 400, { error: 'Quantity must be a whole number of at least 1.' })
+    if (balanceDue(lineTotal(websitePrice, quantity), amountPaid) > 0 && !customerName) {
       return send(res, 400, { error: 'Add the customer name because this sale has a balance.' })
     }
     const actualPrice = actualPriceInput === null ? reverseMarkup(websitePrice) : actualPriceInput
     db.prepare(`
       UPDATE sales
-      SET customer_name = ?, amount_paid = ?, website_price = ?, actual_price = ?, profit = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+      SET customer_name = ?, amount_paid = ?, website_price = ?, actual_price = ?, profit = ?, quantity = ?, note = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(customerName, amountPaid, websitePrice, actualPrice, amountPaid - actualPrice, String(b.note || ''), id)
+    `).run(customerName, amountPaid, websitePrice, actualPrice, amountPaid - lineTotal(actualPrice, quantity), quantity, String(b.note || ''), id)
     return send(res, 200, { sale: publicSale(db.prepare('SELECT * FROM sales WHERE id = ?').get(id)) })
   }
 

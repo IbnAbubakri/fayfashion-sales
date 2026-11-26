@@ -23,7 +23,8 @@ export default async function handler(req, res) {
       const rows = await getSql()`
         UPDATE sales
         SET customer_name = ${v.customerName}, amount_paid = ${v.amountPaid}, website_price = ${v.websitePrice},
-            actual_price = ${v.actualPrice}, profit = ${v.profit}, note = ${v.note}, updated_at = now()
+            actual_price = ${v.actualPrice}, profit = ${v.profit}, quantity = ${v.quantity},
+            note = ${v.note}, updated_at = now()
         WHERE id = ${id}
         RETURNING *
       `

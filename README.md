@@ -7,6 +7,7 @@ A local sales/profit record book for FayFashionCart. It reads the current live c
 - Searchable product dropdown from the live FayFashionCart catalogue
 - Variant-aware pricing when a product has size/colour options
 - Editable website price and actual/source price for discounted customer sales
+- Quantity support so one sale can cover multiple items without recording it twice
 - Website price, actual/source price, amount paid, balance due, and auto profit in a table
 - Customer name is saved whenever a sale is unpaid or partially paid
 - Outstanding balance total, payment status badges, and payment-status filters
@@ -44,11 +45,15 @@ The storefront stores supplier prices and adds a markup before display:
 | < ₦50,000 | ₦3,000 |
 | ≥ ₦50,000 | ₦5,000 |
 
-The record book uses that ladder to auto-fill the prices. You can override both the website price and actual/source price when a customer gets a discount; profit is always `amount paid − actual price`.
+The record book uses that ladder to auto-fill the per-item prices. You can override both the website price and actual/source price when a customer gets a discount; profit is always `amount paid − actual cost`.
 
 ## Balance rule
 
-`Balance due = max(0, website price − amount paid)`. A customer name is required when the balance is greater than zero, and the name and balance are included in CSV exports.
+`Balance due = max(0, website price × quantity − amount paid)`. A customer name is required when the balance is greater than zero, and the name and balance are included in CSV exports.
+
+## Quantity rule
+
+Prices are stored per item. For a customer buying two or more, set the quantity and the app calculates `total price = website price × quantity` and `total cost = actual price × quantity`. Profit becomes `amount paid − total cost`, and the balance uses the total price. Existing records without a quantity are treated as quantity 1.
 
 ## Capital rule
 

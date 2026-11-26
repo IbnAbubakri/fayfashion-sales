@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import Login from './Login'
-import { balanceDue, businessMoney, formatNaira, paymentLabel, paymentStatus } from '../shared/pricing'
+import { balanceDue, businessMoney, formatNaira, lineTotal, normalizeQuantity, paymentLabel, paymentStatus } from '../shared/pricing'
 import BrandLogo from './BrandLogo'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -109,13 +109,14 @@ function Icon({ name, size = 18 }) {
 }
 
 function summary(sales) {
-  const totalWebsite = sales.reduce((sum, s) => sum + Number(s.website_price || 0), 0)
+  const totalQuantity = sales.reduce((sum, s) => sum + normalizeQuantity(s.quantity), 0)
+  const totalWebsite = sales.reduce((sum, s) => sum + lineTotal(s.website_price, s.quantity), 0)
   const totalPaid = sales.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0)
-  const totalActual = sales.reduce((sum, s) => sum + Number(s.actual_price || 0), 0)
+  const totalActual = sales.reduce((sum, s) => sum + lineTotal(s.actual_price, s.quantity), 0)
   const totalProfit = sales.reduce((sum, s) => sum + Number(s.profit || 0), 0)
-  const totalBalance = sales.reduce((sum, s) => sum + balanceDue(s.website_price, s.amount_paid), 0)
-  const balanceCount = sales.filter((s) => balanceDue(s.website_price, s.amount_paid) > 0).length
-  return { count: sales.length, totalWebsite, totalPaid, totalActual, totalProfit, totalBalance, balanceCount }
+  const totalBalance = sales.reduce((sum, s) => sum + balanceDue(lineTotal(s.website_price, s.quantity), s.amount_paid), 0)
+  const balanceCount = sales.filter((s) => balanceDue(lineTotal(s.website_price, s.quantity), s.amount_paid) > 0).length
+  return { count: sales.length, totalQuantity, totalWebsite, totalPaid, totalActual, totalProfit, totalBalance, balanceCount }
 }
 
 function initials(name) {
@@ -195,7 +196,7 @@ function Dashboard({ user, onLogout }) {
   const [notice, setNotice] = useState('')
   const [activeNav, setActiveNav] = useState('overview')
 
-  const [form, setForm] = useState({ saleDate: today, customerName: '', product: null, variantId: '', websitePrice: '', actualPrice: '', amountPaid: '', note: '' })
+  const [form, setForm] = useState({ saleDate: today, customerName: '', product: null, variantId: '', websitePrice: '', actualPrice: '', quantity: '1', amountPaid: '', note: '' })
   const [pricesEdited, setPricesEdited] = useState(false)
   const [dateFilter, setDateFilter] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
@@ -238,9 +239,12 @@ function Dashboard({ user, onLogout }) {
   const catalogueActualPrice = selectedVariant?.actualPrice ?? form.product?.actualPrice ?? 0
   const websitePrice = Math.round(Number(form.websitePrice) || 0)
   const actualPrice = Math.round(Number(form.actualPrice) || 0)
-  const balance = balanceDue(websitePrice, Number(form.amountPaid) || 0)
-  const status = paymentStatus(websitePrice, Number(form.amountPaid) || 0)
-  const profit = (Number(form.amountPaid) || 0) - actualPrice
+  const quantity = normalizeQuantity(form.quantity)
+  const websiteTotal = lineTotal(websitePrice, quantity)
+  const actualTotal = lineTotal(actualPrice, quantity)
+  const balance = balanceDue(websiteTotal, Number(form.amountPaid) || 0)
+  const status = paymentStatus(websiteTotal, Number(form.amountPaid) || 0)
+  const profit = (Number(form.amountPaid) || 0) - actualTotal
 
   // Auto-fill from the catalogue, but never overwrite a price the user changed.
   useEffect(() => {
@@ -254,7 +258,7 @@ function Dashboard({ user, onLogout }) {
   }, [catalogueWebsitePrice, catalogueActualPrice, pricesEdited])
 
   const resetForm = () => {
-    setForm({ saleDate: today, customerName: '', product: null, variantId: '', websitePrice: '', actualPrice: '', amountPaid: '', note: '' })
+    setForm({ saleDate: today, customerName: '', product: null, variantId: '', websitePrice: '', actualPrice: '', quantity: '1', amountPaid: '', note: '' })
     setPricesEdited(false)
     setEditingId(null)
   }
@@ -384,6 +388,7 @@ function Dashboard({ user, onLogout }) {
     if (!form.saleDate) return setError('Choose the sale date.')
     if (!websitePrice) return setError('Enter a website price greater than zero.')
     if (form.actualPrice === '' || Number(form.actualPrice) < 0) return setError('Enter a valid actual/source price.')
+    if (!Number.isInteger(Number(form.quantity)) || Number(form.quantity) < 1) return setError('Quantity must be a whole number of at least 1.')
     if (form.amountPaid === '' || Number(form.amountPaid) < 0) return setError('Enter the amount paid by the customer.')
     if (balance > 0 && !form.customerName.trim()) return setError('Add the customer name because this sale has a balance.')
     try {
@@ -396,6 +401,7 @@ function Dashboard({ user, onLogout }) {
         variantLabel: selectedVariant?.label || '',
         websitePrice,
         actualPrice,
+        quantity: Number(form.quantity),
         amountPaid: Number(form.amountPaid),
         note: form.note,
       }
@@ -424,6 +430,7 @@ function Dashboard({ user, onLogout }) {
       variantId: sale.variant_id || '',
       websitePrice: String(sale.website_price),
       actualPrice: String(sale.actual_price),
+      quantity: String(normalizeQuantity(sale.quantity)),
       amountPaid: String(sale.amount_paid),
       note: sale.note || '',
     })
@@ -629,7 +636,7 @@ function Dashboard({ user, onLogout }) {
           <div className="card-head">
             <div>
               <h2>{editingId ? 'Edit sale' : 'Record a sale'}</h2>
-              <p>Prices auto-fill from the catalogue. Edit them for customer discounts; the balance due follows the website price.</p>
+              <p>Prices are per item and auto-fill from the catalogue. Set the quantity for multiple items; totals, balance, and profit update automatically.</p>
             </div>
             <div className={`catalog-badge ${catalogMeta ? 'online' : loading ? 'loading' : 'offline'}`}>
               <span className="status-dot" />
@@ -701,9 +708,27 @@ function Dashboard({ user, onLogout }) {
                 onChange={(e) => { setPricesEdited(true); setForm({ ...form, actualPrice: e.target.value }) }}
               />
             </label>
+            <label className="quantity-field">
+              Quantity
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+              />
+            </label>
             <label className="amount-field">
               Amount paid
               <input type="number" min="0" step="1" value={form.amountPaid} placeholder="₦0" onChange={(e) => setForm({ ...form, amountPaid: e.target.value })} />
+            </label>
+            <label className="total-field">
+              Total price
+              <input value={formatNaira(websiteTotal)} readOnly />
+            </label>
+            <label className="cost-field">
+              Total cost
+              <input value={formatNaira(actualTotal)} readOnly />
             </label>
             <label className={`balance-field ${balance > 0 ? 'due' : ''}`}>
               Balance due
@@ -765,7 +790,8 @@ function Dashboard({ user, onLogout }) {
                   <th scope="col">Date</th>
                   <th scope="col">Customer</th>
                   <th scope="col">Product</th>
-                  <th scope="col">Website price</th>
+                  <th scope="col">Qty</th>
+                  <th scope="col">Total price</th>
                   <th scope="col">Amount paid</th>
                   <th scope="col">Balance due</th>
                   <th scope="col">Profit</th>
@@ -776,7 +802,7 @@ function Dashboard({ user, onLogout }) {
               <tbody>
                 {loading && (
                   <tr>
-                    <td colSpan="9">
+                    <td colSpan="10">
                       <div className="empty-state">
                         <span className="empty-icon"><Icon name="list" size={22} /></span>
                         <strong>Loading records…</strong>
@@ -787,7 +813,7 @@ function Dashboard({ user, onLogout }) {
                 )}
                 {!loading && filteredSales.length === 0 && (
                   <tr>
-                    <td colSpan="9">
+                    <td colSpan="10">
                       <div className="empty-state">
                         <span className="empty-icon"><Icon name="receipt" size={22} /></span>
                         <strong>No sale records yet</strong>
@@ -798,8 +824,10 @@ function Dashboard({ user, onLogout }) {
                   </tr>
                 )}
                 {!loading && filteredSales.map((s) => {
-                  const rowBalance = balanceDue(s.website_price, s.amount_paid)
-                  const rowStatus = paymentStatus(s.website_price, s.amount_paid)
+                  const rowQuantity = normalizeQuantity(s.quantity)
+                  const rowTotal = lineTotal(s.website_price, s.quantity)
+                  const rowBalance = balanceDue(rowTotal, s.amount_paid)
+                  const rowStatus = paymentStatus(rowTotal, s.amount_paid)
                   return (
                     <tr key={s.id}>
                       <td>{formatDate(s.sale_date)}</td>
@@ -812,7 +840,13 @@ function Dashboard({ user, onLogout }) {
                           {s.variant_label && <small>{s.variant_label}</small>}
                         </span>
                       </td>
-                      <td>{formatNaira(s.website_price)}</td>
+                      <td>{rowQuantity}</td>
+                      <td>
+                        <span className="price-cell">
+                          <strong>{formatNaira(rowTotal)}</strong>
+                          {rowQuantity > 1 && <small>{formatNaira(s.website_price)} × {rowQuantity}</small>}
+                        </span>
+                      </td>
                       <td>{formatNaira(s.amount_paid)}</td>
                       <td className="balance-cell">
                         <span className={rowBalance > 0 ? 'balance-due' : ''}>{formatNaira(rowBalance)}</span>
@@ -832,6 +866,7 @@ function Dashboard({ user, onLogout }) {
                 <tfoot>
                   <tr>
                     <td colSpan="3">Totals ({totals.count})</td>
+                    <td>{totals.totalQuantity}</td>
                     <td>{formatNaira(totals.totalWebsite)}</td>
                     <td>{formatNaira(totals.totalPaid)}</td>
                     <td className={totals.totalBalance > 0 ? 'balance-due' : ''}>{formatNaira(totals.totalBalance)}</td>

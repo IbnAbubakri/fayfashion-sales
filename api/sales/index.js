@@ -18,8 +18,8 @@ export default async function handler(req, res) {
       try { catalogProducts = (await fetchCatalog()).products } catch {}
       const v = normalizeInsert(body, catalogProducts)
       const rows = await getSql()`
-        INSERT INTO sales (sale_date, product_id, product_name, variant_id, variant_label, customer_name, website_price, actual_price, amount_paid, profit, note)
-        VALUES (${v.saleDate}, ${v.productId}, ${v.productName}, ${v.variantId}, ${v.variantLabel}, ${v.customerName}, ${v.websitePrice}, ${v.actualPrice}, ${v.amountPaid}, ${v.profit}, ${v.note})
+        INSERT INTO sales (sale_date, product_id, product_name, variant_id, variant_label, customer_name, website_price, actual_price, amount_paid, profit, quantity, note)
+        VALUES (${v.saleDate}, ${v.productId}, ${v.productName}, ${v.variantId}, ${v.variantLabel}, ${v.customerName}, ${v.websitePrice}, ${v.actualPrice}, ${v.amountPaid}, ${v.profit}, ${v.quantity}, ${v.note})
         RETURNING *
       `
       return send(res, 201, { sale: publicSale(rows[0]) })

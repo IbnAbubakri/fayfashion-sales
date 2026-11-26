@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { balanceDue, businessMoney, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
+import { balanceDue, businessMoney, lineTotal, normalizeQuantity, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
 import { normalizeCapital, normalizeInsert, normalizeUpdate } from '../shared/db.js'
 
 const markups = [
@@ -57,6 +57,30 @@ const fallback = normalizeInsert({
 })
 assert.equal(fallback.actualPrice, 5000, 'missing actual price should still reverse markup')
 
+assert.equal(normalizeQuantity(undefined), 1, 'missing quantity should default to one')
+assert.equal(normalizeQuantity(2.8), 2, 'quantity should be a whole number')
+assert.equal(lineTotal(6500, 2), 13000, 'line total should multiply by quantity')
+
+const multiple = normalizeInsert({
+  saleDate: '2026-11-26', productId: 'p1', productName: 'Test product',
+  websitePrice: 6500, actualPrice: 5000, quantity: 2, amountPaid: 13000,
+})
+assert.equal(multiple.quantity, 2, 'quantity was ignored')
+assert.equal(multiple.websiteTotal, 13000, 'website total should use quantity')
+assert.equal(multiple.profit, 3000, 'profit should use total actual cost')
+assert.equal(multiple.due, 0, 'balance should use total website price')
+
+const partialMultiple = normalizeUpdate({
+  websitePrice: 6500, actualPrice: 5000, quantity: 2, amountPaid: 10000, customerName: 'Ada',
+})
+assert.equal(partialMultiple.due, 3000, 'partial balance should use total price')
+assert.equal(partialMultiple.profit, 0, 'profit should use total cost')
+
+assert.throws(() => normalizeInsert({
+  saleDate: '2026-11-26', productId: 'p1', productName: 'Test product',
+  websitePrice: 6500, amountPaid: 6500, quantity: 0,
+}), /Quantity/, 'zero quantity should be rejected')
+
 const capital = normalizeCapital({
   contributionDate: '2026-11-26', amount: 10000, source: 'Dad', note: 'Week 1 of 10',
 })
@@ -72,4 +96,4 @@ for (const [amount, profit, expected] of [
   assert.equal(businessMoney(amount, profit), expected, `business money failed for ${amount}/${profit}`)
 }
 
-console.log(`Markup, balances, price overrides, and capital totals OK for ${markups.length} values`)
+console.log(`Markup, balances, price overrides, quantities, and capital totals OK for ${markups.length} values`)

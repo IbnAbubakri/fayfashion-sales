@@ -29,6 +29,16 @@ export function reverseMarkup(displayPrice) {
   return display - 5000
 }
 
+// Missing or invalid quantities default to one item. Stored prices are per item.
+export function normalizeQuantity(value) {
+  const n = Math.floor(Number(value))
+  return Number.isFinite(n) && n > 0 ? n : 1
+}
+
+export function lineTotal(unitPrice, quantity) {
+  return Math.round((Number(unitPrice) || 0) * normalizeQuantity(quantity))
+}
+
 export function balanceDue(websitePrice, amountPaid) {
   const due = Math.round(Number(websitePrice) || 0) - Math.round(Number(amountPaid) || 0)
   return Math.max(0, due)
