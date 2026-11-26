@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
-import { balanceDue, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
-import { normalizeInsert, normalizeUpdate } from '../shared/db.js'
+import { balanceDue, businessMoney, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
+import { normalizeCapital, normalizeInsert, normalizeUpdate } from '../shared/db.js'
 
 const markups = [
   [0, 300], [999, 300],
@@ -57,4 +57,19 @@ const fallback = normalizeInsert({
 })
 assert.equal(fallback.actualPrice, 5000, 'missing actual price should still reverse markup')
 
-console.log(`Markup, reverse markup, balances, and price overrides OK for ${markups.length} values`)
+const capital = normalizeCapital({
+  contributionDate: '2026-11-26', amount: 10000, source: 'Dad', note: 'Week 1 of 10',
+})
+assert.equal(capital.amount, 10000, 'capital amount was not stored')
+assert.equal(capital.source, 'Dad', 'capital source was not stored')
+
+for (const [amount, profit, expected] of [
+  [10000, 700, 10700],
+  [100000, -500, 99500],
+  [0, 2500, 2500],
+  [10000, -10000, 0],
+]) {
+  assert.equal(businessMoney(amount, profit), expected, `business money failed for ${amount}/${profit}`)
+}
+
+console.log(`Markup, balances, price overrides, and capital totals OK for ${markups.length} values`)

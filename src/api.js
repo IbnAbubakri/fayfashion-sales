@@ -28,4 +28,16 @@ export const api = {
     body: JSON.stringify(payload),
   }),
   deleteSale: (id) => getJson(`/api/sales/${id}`, { method: 'DELETE' }),
+  capital: () => getJson('/api/capital'),
+  addCapital: (payload) => getJson('/api/capital', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  }),
+  updateCapital: (id, payload) => getJson(`/api/capital/${id}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  }),
+  deleteCapital: (id) => getJson(`/api/capital/${id}`, { method: 'DELETE' }),
 }

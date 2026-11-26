@@ -38,6 +38,16 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(sale_date);
   CREATE INDEX IF NOT EXISTS idx_sales_product ON sales(product_name);
+  CREATE TABLE IF NOT EXISTS capital (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    contribution_date TEXT NOT NULL,
+    amount REAL NOT NULL,
+    source TEXT DEFAULT '',
+    note TEXT DEFAULT '',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_capital_date ON capital(contribution_date);
 `)
 
 const saleColumns = db.prepare('PRAGMA table_info(sales)').all().map((column) => column.name)
@@ -129,6 +139,14 @@ function publicSale(row) {
   }
 }
 
+function publicCapital(row) {
+  return {
+    ...row,
+    source: row.source || '',
+    note: row.note || '',
+  }
+}
+
 function send(res, status, body) {
   const payload = typeof body === 'string' ? body : JSON.stringify(body)
   res.writeHead(status, {
@@ -177,6 +195,11 @@ const routes = {
     ].join('\n')
     return csv
   },
+
+  async '/api/capital'() {
+    const rows = db.prepare('SELECT * FROM capital ORDER BY contribution_date DESC, id DESC').all().map(publicCapital)
+    return { capital: rows }
+  },
 }
 
 async function handleApi(req, res, pathname) {
@@ -203,7 +226,8 @@ async function handleApi(req, res, pathname) {
   // The catalogue, sale records, and CSV export all require a signed session.
   if (!readSession(req)) return send(res, 401, { error: 'Please sign in to continue.' })
 
-  const route = routes[pathname]
+  // Route map entries are GET-only; let writes fall through to the handlers below.
+  const route = req.method === 'GET' ? routes[pathname] : null
   if (route) return send(res, 200, await route())
 
   if (pathname === '/api/sales' && req.method === 'GET') {
@@ -283,6 +307,47 @@ async function handleApi(req, res, pathname) {
       WHERE id = ?
     `).run(customerName, amountPaid, websitePrice, actualPrice, amountPaid - actualPrice, String(b.note || ''), id)
     return send(res, 200, { sale: publicSale(db.prepare('SELECT * FROM sales WHERE id = ?').get(id)) })
+  }
+
+  if (pathname === '/api/capital' && req.method === 'POST') {
+    const b = await bodyJson(req)
+    const contributionDate = String(b.contributionDate || '').slice(0, 10)
+    const amount = readPrice(b.amount)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(contributionDate)) return send(res, 400, { error: 'A valid capital date is required.' })
+    if (amount === false) return send(res, 400, { error: 'Capital amount must be a valid amount.' })
+    if (!amount) return send(res, 400, { error: 'Capital amount is required.' })
+    const source = String(b.source || '').trim() || 'Business owner'
+    const result = db.prepare(`
+      INSERT INTO capital (contribution_date, amount, source, note)
+      VALUES (?, ?, ?, ?)
+    `).run(contributionDate, amount, source, String(b.note || '').trim())
+    const row = db.prepare('SELECT * FROM capital WHERE id = ?').get(Number(result.lastInsertRowid))
+    return send(res, 201, { entry: publicCapital(row) })
+  }
+
+  if (pathname.startsWith('/api/capital/') && req.method === 'DELETE') {
+    const id = Number(pathname.split('/').pop())
+    if (!id) return send(res, 400, { error: 'Invalid capital id.' })
+    db.prepare('DELETE FROM capital WHERE id = ?').run(id)
+    return send(res, 200, { ok: true })
+  }
+
+  if (pathname.startsWith('/api/capital/') && req.method === 'PATCH') {
+    const id = Number(pathname.split('/').pop())
+    const b = await bodyJson(req)
+    if (!id) return send(res, 400, { error: 'Invalid capital id.' })
+    const contributionDate = String(b.contributionDate || '').slice(0, 10)
+    const amount = readPrice(b.amount)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(contributionDate)) return send(res, 400, { error: 'A valid capital date is required.' })
+    if (amount === false) return send(res, 400, { error: 'Capital amount must be a valid amount.' })
+    if (!amount) return send(res, 400, { error: 'Capital amount is required.' })
+    const source = String(b.source || '').trim() || 'Business owner'
+    db.prepare(`
+      UPDATE capital
+      SET contribution_date = ?, amount = ?, source = ?, note = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(contributionDate, amount, source, String(b.note || '').trim(), id)
+    return send(res, 200, { entry: publicCapital(db.prepare('SELECT * FROM capital WHERE id = ?').get(id)) })
   }
 
   return send(res, 404, { error: 'Not found' })

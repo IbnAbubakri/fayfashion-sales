@@ -14,10 +14,11 @@ A local sales/profit record book for FayFashionCart. It reads the current live c
 - Local development can still use SQLite via `npm run dev`
 - Edit/delete records, filter by date/product, export CSV
 - Password-protected dashboard with a signed, httpOnly session cookie
+- Capital card for each contribution received (₦100,000 goal tracker) and total business money
 
 ## Vercel environment
 
-Set `DATABASE_URL` to the Neon Postgres connection string. The first API request creates the `sales` table automatically.
+Set `DATABASE_URL` to the Neon Postgres connection string. The first API request creates the `sales` and `capital` tables automatically.
 
 The dashboard and every API route require sign-in. Set these environment variables in Vercel:
 
@@ -49,6 +50,12 @@ The record book uses that ladder to auto-fill the prices. You can override both 
 
 `Balance due = max(0, website price − amount paid)`. A customer name is required when the balance is greater than zero, and the name and balance are included in CSV exports.
 
+## Capital rule
+
+Each amount received is added as its own dated capital entry (with source and optional note), so the ₦10,000 weekly contributions toward the ₦100,000 goal can be tracked independently. Entries can be edited or deleted.
+
+`Business money = total capital + all-time profit`. Profit is still calculated only from sales (`amount paid − actual price`); capital is stored separately and never counted as sales profit.
+
 ## Run locally
 
 ```bash
@@ -70,4 +77,4 @@ Then open <http://127.0.0.1:4174>.
 
 ## Backup
 
-Copy `data/sales.db` to back up all records. You can also export CSV from the page.
+Copy `data/sales.db` to back up all sale and capital records. You can also export CSV from the page.

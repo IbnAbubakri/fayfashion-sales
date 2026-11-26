@@ -44,6 +44,11 @@ export function paymentLabel(status) {
   return { paid: 'Paid', partial: 'Partial', unpaid: 'Unpaid' }[status] || 'Paid'
 }
 
+// Total business money = capital put in + profit made from sales.
+export function businessMoney(capital, profit) {
+  return Math.round((Number(capital) || 0) + (Number(profit) || 0))
+}
+
 export function formatNaira(value) {
   return `₦${Math.round(Number(value) || 0).toLocaleString('en-NG')}`
 }

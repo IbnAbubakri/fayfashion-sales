@@ -33,6 +33,17 @@ export async function ensureTable() {
         )
       `
       await getSql()`ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_name TEXT DEFAULT ''`
+      await getSql()`
+        CREATE TABLE IF NOT EXISTS capital (
+          id SERIAL PRIMARY KEY,
+          contribution_date DATE NOT NULL,
+          amount NUMERIC NOT NULL,
+          source TEXT DEFAULT '',
+          note TEXT DEFAULT '',
+          created_at TIMESTAMPTZ DEFAULT now(),
+          updated_at TIMESTAMPTZ DEFAULT now()
+        )
+      `
     })().catch((err) => {
       tablePromise = null
       throw err
@@ -65,6 +76,18 @@ export function publicSale(row) {
     payment_status: paymentStatus(websitePrice, amountPaid),
     profit: Number(row.profit),
     note: row.note,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }
+}
+
+export function publicCapital(row) {
+  return {
+    id: Number(row.id),
+    contribution_date: dateOnly(row.contribution_date),
+    amount: Number(row.amount),
+    source: row.source || '',
+    note: row.note || '',
     created_at: row.created_at,
     updated_at: row.updated_at,
   }
@@ -126,6 +149,19 @@ export function normalizeUpdate(b) {
   return {
     websitePrice, actualPrice, amountPaid, customerName, due,
     profit: amountPaid - actualPrice,
+    note: String(b.note || '').trim(),
+  }
+}
+
+export function normalizeCapital(b) {
+  const contributionDate = String(b.contributionDate || '').slice(0, 10)
+  const amount = readAmount(b.amount, 'Capital amount')
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(contributionDate)) throw badRequest('A valid capital date is required.')
+  if (!amount) throw badRequest('Capital amount is required.')
+  return {
+    contributionDate,
+    amount,
+    source: String(b.source || '').trim() || 'Business owner',
     note: String(b.note || '').trim(),
   }
 }

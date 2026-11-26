@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
 import Login from './Login'
-import { balanceDue, formatNaira, paymentLabel, paymentStatus } from '../shared/pricing'
+import { balanceDue, businessMoney, formatNaira, paymentLabel, paymentStatus } from '../shared/pricing'
 import BrandLogo from './BrandLogo'
 
 const today = new Date().toISOString().slice(0, 10)
+const CAPITAL_GOAL = 100000
 
 function Icon({ name, size = 18 }) {
   const paths = {
@@ -72,6 +73,13 @@ function Icon({ name, size = 18 }) {
       <>
         <circle cx="12" cy="12" r="9" />
         <path d="M12 8v5M12 16h.01" />
+      </>
+    ),
+    bank: (
+      <>
+        <path d="m3 9 9-5 9 5" />
+        <path d="M5 9v9M10 9v9M14 9v9M19 9v9" />
+        <path d="M3 20h18" />
       </>
     ),
     lock: (
@@ -181,6 +189,7 @@ function Dashboard({ user, onLogout }) {
   const [products, setProducts] = useState([])
   const [catalogMeta, setCatalogMeta] = useState(null)
   const [sales, setSales] = useState([])
+  const [capital, setCapital] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -192,18 +201,26 @@ function Dashboard({ user, onLogout }) {
   const [searchFilter, setSearchFilter] = useState('')
   const [paymentFilter, setPaymentFilter] = useState('')
   const [editingId, setEditingId] = useState(null)
+  const [capitalForm, setCapitalForm] = useState({ contributionDate: today, amount: '', source: 'Dad', note: '' })
+  const [editingCapitalId, setEditingCapitalId] = useState(null)
 
   const reloadSales = async () => {
     const { sales: rows } = await api.sales()
     setSales(rows)
   }
 
+  const reloadCapital = async () => {
+    const { capital: rows } = await api.capital()
+    setCapital(rows)
+  }
+
   useEffect(() => {
-    Promise.all([api.products(), api.sales()])
-      .then(([catalog, salesData]) => {
+    Promise.all([api.products(), api.sales(), api.capital()])
+      .then(([catalog, salesData, capitalData]) => {
         setProducts(catalog.products)
         setCatalogMeta(catalog)
         setSales(salesData.sales)
+        setCapital(capitalData.capital)
         setError('')
         setLoading(false)
       })
@@ -242,6 +259,56 @@ function Dashboard({ user, onLogout }) {
     setEditingId(null)
   }
 
+  const resetCapitalForm = () => {
+    setCapitalForm({ contributionDate: today, amount: '', source: 'Dad', note: '' })
+    setEditingCapitalId(null)
+  }
+
+  const submitCapital = async (e) => {
+    e.preventDefault()
+    setError('')
+    if (!capitalForm.contributionDate) return setError('Choose the date the capital was received.')
+    if (capitalForm.amount === '' || Number(capitalForm.amount) <= 0) return setError('Enter a capital amount greater than zero.')
+    try {
+      const payload = {
+        contributionDate: capitalForm.contributionDate,
+        amount: Number(capitalForm.amount),
+        source: capitalForm.source.trim() || 'Business owner',
+        note: capitalForm.note.trim(),
+      }
+      if (editingCapitalId) await api.updateCapital(editingCapitalId, payload)
+      else await api.addCapital(payload)
+      await reloadCapital()
+      setNotice(editingCapitalId ? 'Capital entry updated.' : 'Capital added.')
+      resetCapitalForm()
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const startEditCapital = (entry) => {
+    setCapitalForm({
+      contributionDate: entry.contribution_date,
+      amount: String(entry.amount),
+      source: entry.source || '',
+      note: entry.note || '',
+    })
+    setEditingCapitalId(entry.id)
+    scrollToCapital()
+  }
+
+  const removeCapital = async (id) => {
+    if (!window.confirm('Remove this capital entry?')) return
+    try {
+      await api.deleteCapital(id)
+      await reloadCapital()
+      if (editingCapitalId === id) resetCapitalForm()
+      setNotice('Capital entry removed.')
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
   const filteredSales = useMemo(() => {
     const needle = searchFilter.trim().toLowerCase()
     return sales.filter((s) => {
@@ -253,20 +320,45 @@ function Dashboard({ user, onLogout }) {
   }, [sales, dateFilter, paymentFilter, searchFilter])
 
   const totals = summary(filteredSales)
+  const allTotals = summary(sales)
+  const totalCapital = capital.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+  const businessTotal = businessMoney(totalCapital, allTotals.totalProfit)
+  const capitalProgress = Math.min(100, Math.round((totalCapital / CAPITAL_GOAL) * 100))
 
   const scrollToForm = () => {
     setActiveNav('record-form')
     document.getElementById('record-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
+  const scrollToCapital = () => {
+    setActiveNav('capital')
+    document.getElementById('capital')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   const navItems = [
     { id: 'overview', label: 'Overview', icon: 'grid', href: '#overview' },
+    { id: 'capital', label: 'Capital', icon: 'bank', href: '#capital' },
     { id: 'record-form', label: 'Record sale', icon: 'plus', href: '#record-form' },
     { id: 'records', label: 'Records', icon: 'list', href: '#records' },
   ]
 
   const statCards = [
     { label: 'Records shown', value: loading ? '—' : String(totals.count), hint: 'In current filter', icon: 'receipt' },
+    {
+      label: 'Total capital',
+      value: loading ? '—' : formatNaira(totalCapital),
+      hint: loading ? 'Loading contributions' : `${capital.length} contribution${capital.length === 1 ? '' : 's'} received`,
+      icon: 'bank',
+      tone: 'capital',
+    },
+    {
+      label: 'Business money',
+      value: loading ? '—' : formatNaira(businessTotal),
+      hint: 'All capital + all-time profit',
+      icon: 'wallet',
+      tone: 'money',
+      negative: businessTotal < 0,
+    },
     { label: 'Total paid', value: loading ? '—' : formatNaira(totals.totalPaid), hint: 'Cash received', icon: 'wallet' },
     {
       label: 'Balance due',
@@ -275,7 +367,14 @@ function Dashboard({ user, onLogout }) {
       icon: 'alert',
       tone: 'balance',
     },
-    { label: 'Total profit', value: loading ? '—' : formatNaira(totals.totalProfit), hint: 'Paid minus cost', icon: 'trend', tone: 'profit' },
+    {
+      label: 'Total profit',
+      value: loading ? '—' : formatNaira(totals.totalProfit),
+      hint: 'Paid minus cost',
+      icon: 'trend',
+      tone: 'profit',
+      negative: totals.totalProfit < 0,
+    },
   ]
 
   const submit = async (e) => {
@@ -396,6 +495,10 @@ function Dashboard({ user, onLogout }) {
               <Icon name="download" size={16} />
               Export CSV
             </a>
+            <button className="button ghost" onClick={scrollToCapital}>
+              <Icon name="bank" size={16} />
+              Add capital
+            </button>
             <button className="button primary" onClick={scrollToForm}>
               <Icon name="plus" size={16} />
               Record sale
@@ -418,10 +521,107 @@ function Dashboard({ user, onLogout }) {
                   <span>{stat.label}</span>
                   <span className="stat-icon"><Icon name={stat.icon} size={17} /></span>
                 </div>
-                <strong className={stat.tone === 'profit' && totals.totalProfit < 0 ? 'negative' : ''}>{stat.value}</strong>
+                <strong className={stat.negative ? 'negative' : ''}>{stat.value}</strong>
                 <small>{stat.hint}</small>
               </article>
             ))}
+          </div>
+        </section>
+
+        <section className="card capital-card" id="capital">
+          <div className="card-head">
+            <div>
+              <h2>Business capital</h2>
+              <p>Record each amount received. Business money = all capital + all-time profit.</p>
+            </div>
+            <span className="capital-badge">{loading ? 'Loading…' : `${capital.length} contribution${capital.length === 1 ? '' : 's'}`}</span>
+          </div>
+          <div className="capital-body">
+            <div className="capital-left">
+              <form onSubmit={submitCapital} className="capital-form">
+                <label className="capital-date">
+                  Date received
+                  <input type="date" value={capitalForm.contributionDate} onChange={(e) => setCapitalForm({ ...capitalForm, contributionDate: e.target.value })} />
+                </label>
+                <label className="capital-amount">
+                  Amount (₦)
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={capitalForm.amount}
+                    placeholder="e.g. 10000"
+                    onChange={(e) => setCapitalForm({ ...capitalForm, amount: e.target.value })}
+                  />
+                </label>
+                <label className="capital-source">
+                  Source
+                  <input
+                    value={capitalForm.source}
+                    placeholder="e.g. Dad"
+                    onChange={(e) => setCapitalForm({ ...capitalForm, source: e.target.value })}
+                  />
+                </label>
+                <label className="capital-note">
+                  Note
+                  <input
+                    value={capitalForm.note}
+                    placeholder="Optional detail (e.g. week 1 of 10)"
+                    onChange={(e) => setCapitalForm({ ...capitalForm, note: e.target.value })}
+                  />
+                </label>
+                <div className="capital-form-actions">
+                  {editingCapitalId && (
+                    <button className="button ghost" type="button" onClick={resetCapitalForm}>Cancel</button>
+                  )}
+                  <button className="button primary" type="submit">
+                    <Icon name={editingCapitalId ? 'receipt' : 'plus'} size={16} />
+                    {editingCapitalId ? 'Save changes' : 'Add capital'}
+                  </button>
+                </div>
+              </form>
+              <div className="capital-progress">
+                <div className="progress-head">
+                  <span>Capital goal</span>
+                  <strong>{formatNaira(totalCapital)} / {formatNaira(CAPITAL_GOAL)}</strong>
+                </div>
+                <div className="progress-track" role="progressbar" aria-valuenow={capitalProgress} aria-valuemin="0" aria-valuemax="100" aria-label="Capital goal progress">
+                  <div className="progress-fill" style={{ width: `${capitalProgress}%` }} />
+                </div>
+                <small>
+                  {capitalProgress}% of the {formatNaira(CAPITAL_GOAL)} plan · {formatNaira(Math.max(0, CAPITAL_GOAL - totalCapital))} remaining
+                </small>
+              </div>
+            </div>
+            <div className="capital-list">
+              <div className="capital-list-head">
+                <strong>Contributions</strong>
+                <span>{loading ? 'Loading…' : formatNaira(totalCapital)} total</span>
+              </div>
+              {capital.length === 0 && !loading && (
+                <div className="empty-state capital-empty">
+                  <span className="empty-icon"><Icon name="bank" size={22} /></span>
+                  <strong>No capital recorded yet</strong>
+                  <span>Add the ₦10,000 your dad has already given to start tracking business money.</span>
+                </div>
+              )}
+              {capital.map((entry) => (
+                <div className="capital-entry" key={entry.id}>
+                  <div className="entry-main">
+                    <span className="entry-icon"><Icon name="bank" size={16} /></span>
+                    <span className="entry-copy">
+                      <strong>{entry.source || 'Business owner'}</strong>
+                      <small>{formatDate(entry.contribution_date)}{entry.note ? ` · ${entry.note}` : ''}</small>
+                    </span>
+                  </div>
+                  <strong className="entry-amount">{formatNaira(entry.amount)}</strong>
+                  <div className="row-actions">
+                    <button type="button" onClick={() => startEditCapital(entry)} aria-label={`Edit capital from ${entry.source}`}>Edit</button>
+                    <button type="button" onClick={() => removeCapital(entry.id)} aria-label={`Delete capital from ${entry.source}`}>Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </section>
 
