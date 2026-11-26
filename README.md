@@ -1,11 +1,12 @@
 # FayFashionCart Sales Book
 
-A local sales/profit record book for FayFashionCart. It reads the current live catalogue from `http://fayfashioncart.com.ng/products.json`, lets you search the exact product/variant, and reverses FayFashionCart's tiered markup to compute the supplier/actual price.
+A local sales/profit record book for FayFashionCart. It reads the current live catalogue from `http://fayfashioncart.com.ng/products.json`, lets you search the exact product/variant, and auto-fills website and supplier prices. Both prices can be edited for customer discounts.
 
 ## Features
 
 - Searchable product dropdown from the live FayFashionCart catalogue
 - Variant-aware pricing when a product has size/colour options
+- Editable website price and actual/source price for discounted customer sales
 - Website price, actual/source price, amount paid, balance due, and auto profit in a table
 - Customer name is saved whenever a sale is unpaid or partially paid
 - Outstanding balance total, payment status badges, and payment-status filters
@@ -42,7 +43,7 @@ The storefront stores supplier prices and adds a markup before display:
 | < ₦50,000 | ₦3,000 |
 | ≥ ₦50,000 | ₦5,000 |
 
-The record book reverses that markup from the displayed website price.
+The record book uses that ladder to auto-fill the prices. You can override both the website price and actual/source price when a customer gets a discount; profit is always `amount paid − actual price`.
 
 ## Balance rule
 

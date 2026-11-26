@@ -186,7 +186,8 @@ function Dashboard({ user, onLogout }) {
   const [notice, setNotice] = useState('')
   const [activeNav, setActiveNav] = useState('overview')
 
-  const [form, setForm] = useState({ saleDate: today, customerName: '', product: null, variantId: '', amountPaid: '', note: '' })
+  const [form, setForm] = useState({ saleDate: today, customerName: '', product: null, variantId: '', websitePrice: '', actualPrice: '', amountPaid: '', note: '' })
+  const [pricesEdited, setPricesEdited] = useState(false)
   const [dateFilter, setDateFilter] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
   const [paymentFilter, setPaymentFilter] = useState('')
@@ -216,13 +217,30 @@ function Dashboard({ user, onLogout }) {
   }, [notice])
 
   const selectedVariant = form.product?.options?.find((o) => o.id === form.variantId) || null
-  const websitePrice = selectedVariant?.websitePrice ?? form.product?.websitePrice ?? 0
-  // The API supplies the supplier price with the catalogue, so the form and the
-  // saved record always use the same markup ladder.
-  const actualPrice = selectedVariant?.actualPrice ?? form.product?.actualPrice ?? 0
+  const catalogueWebsitePrice = selectedVariant?.websitePrice ?? form.product?.websitePrice ?? 0
+  const catalogueActualPrice = selectedVariant?.actualPrice ?? form.product?.actualPrice ?? 0
+  const websitePrice = Math.round(Number(form.websitePrice) || 0)
+  const actualPrice = Math.round(Number(form.actualPrice) || 0)
   const balance = balanceDue(websitePrice, Number(form.amountPaid) || 0)
   const status = paymentStatus(websitePrice, Number(form.amountPaid) || 0)
   const profit = (Number(form.amountPaid) || 0) - actualPrice
+
+  // Auto-fill from the catalogue, but never overwrite a price the user changed.
+  useEffect(() => {
+    if (pricesEdited) return
+    const nextWebsite = catalogueWebsitePrice ? String(catalogueWebsitePrice) : ''
+    const nextActual = catalogueActualPrice ? String(catalogueActualPrice) : ''
+    setForm((prev) => {
+      if (prev.websitePrice === nextWebsite && prev.actualPrice === nextActual) return prev
+      return { ...prev, websitePrice: nextWebsite, actualPrice: nextActual }
+    })
+  }, [catalogueWebsitePrice, catalogueActualPrice, pricesEdited])
+
+  const resetForm = () => {
+    setForm({ saleDate: today, customerName: '', product: null, variantId: '', websitePrice: '', actualPrice: '', amountPaid: '', note: '' })
+    setPricesEdited(false)
+    setEditingId(null)
+  }
 
   const filteredSales = useMemo(() => {
     const needle = searchFilter.trim().toLowerCase()
@@ -265,7 +283,9 @@ function Dashboard({ user, onLogout }) {
     setError('')
     if (!form.product) return setError('Choose a product first.')
     if (!form.saleDate) return setError('Choose the sale date.')
-    if (form.amountPaid === '') return setError('Enter the amount paid by the customer.')
+    if (!websitePrice) return setError('Enter a website price greater than zero.')
+    if (form.actualPrice === '' || Number(form.actualPrice) < 0) return setError('Enter a valid actual/source price.')
+    if (form.amountPaid === '' || Number(form.amountPaid) < 0) return setError('Enter the amount paid by the customer.')
     if (balance > 0 && !form.customerName.trim()) return setError('Add the customer name because this sale has a balance.')
     try {
       const payload = {
@@ -276,6 +296,7 @@ function Dashboard({ user, onLogout }) {
         variantId: form.variantId || null,
         variantLabel: selectedVariant?.label || '',
         websitePrice,
+        actualPrice,
         amountPaid: Number(form.amountPaid),
         note: form.note,
       }
@@ -283,8 +304,7 @@ function Dashboard({ user, onLogout }) {
       else await api.addSale(payload)
       await reloadSales()
       setNotice(editingId ? 'Sale updated.' : 'Sale recorded.')
-      setForm({ saleDate: today, customerName: '', product: null, variantId: '', amountPaid: '', note: '' })
-      setEditingId(null)
+      resetForm()
     } catch (err) {
       setError(err.message)
     }
@@ -303,9 +323,12 @@ function Dashboard({ user, onLogout }) {
       customerName: sale.customer_name || '',
       product,
       variantId: sale.variant_id || '',
+      websitePrice: String(sale.website_price),
+      actualPrice: String(sale.actual_price),
       amountPaid: String(sale.amount_paid),
       note: sale.note || '',
     })
+    setPricesEdited(true)
     setEditingId(sale.id)
     scrollToForm()
   }
@@ -406,7 +429,7 @@ function Dashboard({ user, onLogout }) {
           <div className="card-head">
             <div>
               <h2>{editingId ? 'Edit sale' : 'Record a sale'}</h2>
-              <p>Add the customer name when a payment is not in full. The balance due is calculated from the website price.</p>
+              <p>Prices auto-fill from the catalogue. Edit them for customer discounts; the balance due follows the website price.</p>
             </div>
             <div className={`catalog-badge ${catalogMeta ? 'online' : loading ? 'loading' : 'offline'}`}>
               <span className="status-dot" />
@@ -434,13 +457,19 @@ function Dashboard({ user, onLogout }) {
               <ProductPicker
                 products={products}
                 selected={form.product}
-                onSelect={(p) => setForm({ ...form, product: p, variantId: '' })}
+                onSelect={(p) => {
+                  setPricesEdited(false)
+                  setForm({ ...form, product: p, variantId: '', websitePrice: '', actualPrice: '' })
+                }}
               />
             </label>
             {form.product?.options?.length > 0 && (
               <label className="variant-field">
                 Variant
-                <select value={form.variantId} onChange={(e) => setForm({ ...form, variantId: e.target.value })}>
+                <select value={form.variantId} onChange={(e) => {
+                  setPricesEdited(false)
+                  setForm({ ...form, variantId: e.target.value, websitePrice: '', actualPrice: '' })
+                }}>
                   <option value="">Choose a variant…</option>
                   {form.product.options.map((o) => (
                     <option key={o.id} value={o.id} disabled={o.inStock === false}>
@@ -452,11 +481,25 @@ function Dashboard({ user, onLogout }) {
             )}
             <label className="price-field">
               Website price
-              <input value={formatNaira(websitePrice)} readOnly />
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={form.websitePrice}
+                placeholder="₦0"
+                onChange={(e) => { setPricesEdited(true); setForm({ ...form, websitePrice: e.target.value }) }}
+              />
             </label>
             <label className="price-field">
               Actual price
-              <input value={formatNaira(actualPrice)} readOnly />
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={form.actualPrice}
+                placeholder="₦0"
+                onChange={(e) => { setPricesEdited(true); setForm({ ...form, actualPrice: e.target.value }) }}
+              />
             </label>
             <label className="amount-field">
               Amount paid
@@ -477,7 +520,7 @@ function Dashboard({ user, onLogout }) {
             </label>
             <div className="form-actions">
               {editingId && (
-                <button className="button ghost" type="button" onClick={() => { setEditingId(null); setForm({ saleDate: today, customerName: '', product: null, variantId: '', amountPaid: '', note: '' }) }}>
+                <button className="button ghost" type="button" onClick={resetForm}>
                   Cancel
                 </button>
               )}

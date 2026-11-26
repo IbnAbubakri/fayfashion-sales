@@ -74,6 +74,13 @@ function badRequest(message) {
   return Object.assign(new Error(message), { status: 400 })
 }
 
+function readAmount(value, label) {
+  if (value === undefined || value === null || value === '') return null
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 0) throw badRequest(`${label} must be a valid amount.`)
+  return Math.round(n)
+}
+
 export function normalizeInsert(b, catalogProducts = []) {
   const saleDate = String(b.saleDate || '').slice(0, 10)
   const productId = String(b.productId || '')
@@ -83,18 +90,20 @@ export function normalizeInsert(b, catalogProducts = []) {
   const amountPaid = Math.round(Number(b.amountPaid) || 0)
   if (!/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) throw badRequest('A valid sale date is required.')
   if (!productId || !productName) throw badRequest('Choose a product.')
-  if (!Number.isFinite(Number(b.amountPaid))) throw badRequest('Amount paid is required.')
+  if (!Number.isFinite(Number(b.amountPaid)) || Number(b.amountPaid) < 0) throw badRequest('Amount paid is required.')
 
-  let websitePrice = Math.round(Number(b.websitePrice) || 0)
-  if (!websitePrice) {
+  let websitePrice = readAmount(b.websitePrice, 'Website price')
+  let actualPrice = readAmount(b.actualPrice, 'Actual price')
+  if (websitePrice === null) {
     const p = catalogProducts.find((x) => String(x.id) === productId)
     const v = variantId ? (p?.options || []).find((o) => String(o.id) === variantId) : null
     const basePrice = Math.round(Number(v?.price ?? p?.price) || 0)
     websitePrice = basePrice + priceMarkup(basePrice)
   }
+  if (!websitePrice) throw badRequest('Website price is required.')
+  if (actualPrice === null) actualPrice = reverseMarkup(websitePrice)
   const due = balanceDue(websitePrice, amountPaid)
   if (due > 0 && !customerName) throw badRequest('Add the customer name because this sale has a balance.')
-  const actualPrice = reverseMarkup(websitePrice)
   return {
     saleDate, productId, productName, variantId,
     variantLabel: b.variantLabel || '', customerName,
@@ -105,14 +114,15 @@ export function normalizeInsert(b, catalogProducts = []) {
 }
 
 export function normalizeUpdate(b) {
-  const websitePrice = Math.round(Number(b.websitePrice) || 0)
+  const websitePrice = readAmount(b.websitePrice, 'Website price')
+  const actualPriceInput = readAmount(b.actualPrice, 'Actual price')
   const amountPaid = Math.round(Number(b.amountPaid) || 0)
   const customerName = String(b.customerName || '').trim()
   if (!websitePrice) throw badRequest('Website price is required.')
-  if (!Number.isFinite(Number(b.amountPaid))) throw badRequest('Amount paid is required.')
+  if (!Number.isFinite(Number(b.amountPaid)) || Number(b.amountPaid) < 0) throw badRequest('Amount paid is required.')
+  const actualPrice = actualPriceInput === null ? reverseMarkup(websitePrice) : actualPriceInput
   const due = balanceDue(websitePrice, amountPaid)
   if (due > 0 && !customerName) throw badRequest('Add the customer name because this sale has a balance.')
-  const actualPrice = reverseMarkup(websitePrice)
   return {
     websitePrice, actualPrice, amountPaid, customerName, due,
     profit: amountPaid - actualPrice,

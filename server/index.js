@@ -111,6 +111,13 @@ function money(value) {
   return Number.isFinite(n) ? Math.round(n) : 0
 }
 
+// Returns null when absent (so the catalogue can fill it in) and false when invalid.
+function readPrice(value) {
+  if (value === undefined || value === null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : false
+}
+
 function publicSale(row) {
   const websitePrice = Number(row.website_price) || 0
   const amountPaid = Number(row.amount_paid) || 0
@@ -213,10 +220,13 @@ async function handleApi(req, res, pathname) {
     const amountPaid = money(b.amountPaid)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(saleDate)) return send(res, 400, { error: 'A valid sale date is required.' })
     if (!productId || !String(b.productName || '').trim()) return send(res, 400, { error: 'Choose a product.' })
-    if (!Number.isFinite(Number(b.amountPaid))) return send(res, 400, { error: 'Amount paid is required.' })
+    if (!Number.isFinite(Number(b.amountPaid)) || Number(b.amountPaid) < 0) return send(res, 400, { error: 'Amount paid is required.' })
 
-    let websitePrice = money(b.websitePrice)
-    if (!websitePrice) {
+    let websitePrice = readPrice(b.websitePrice)
+    let actualPrice = readPrice(b.actualPrice)
+    if (websitePrice === false) return send(res, 400, { error: 'Website price must be a valid amount.' })
+    if (actualPrice === false) return send(res, 400, { error: 'Actual price must be a valid amount.' })
+    if (websitePrice === null) {
       try {
         const data = await fetchCatalog()
         const p = data.products.find((x) => String(x.id) === productId)
@@ -227,10 +237,11 @@ async function handleApi(req, res, pathname) {
         }
       } catch {}
     }
+    if (!websitePrice) return send(res, 400, { error: 'Website price is required.' })
+    if (actualPrice === null) actualPrice = reverseMarkup(websitePrice)
     if (balanceDue(websitePrice, amountPaid) > 0 && !customerName) {
       return send(res, 400, { error: 'Add the customer name because this sale has a balance.' })
     }
-    const actualPrice = reverseMarkup(websitePrice)
     const profit = amountPaid - actualPrice
     const result = db.prepare(`
       INSERT INTO sales (sale_date, product_id, product_name, variant_id, variant_label, customer_name, website_price, actual_price, amount_paid, profit, note)
@@ -254,15 +265,18 @@ async function handleApi(req, res, pathname) {
     const id = Number(pathname.split('/').pop())
     const b = await bodyJson(req)
     if (!id) return send(res, 400, { error: 'Invalid sale id.' })
-    const websitePrice = money(b.websitePrice)
+    const websitePrice = readPrice(b.websitePrice)
+    const actualPriceInput = readPrice(b.actualPrice)
     const amountPaid = money(b.amountPaid)
     const customerName = String(b.customerName || '').trim()
+    if (websitePrice === false) return send(res, 400, { error: 'Website price must be a valid amount.' })
+    if (actualPriceInput === false) return send(res, 400, { error: 'Actual price must be a valid amount.' })
     if (!websitePrice) return send(res, 400, { error: 'Website price is required.' })
-    if (!Number.isFinite(Number(b.amountPaid))) return send(res, 400, { error: 'Amount paid is required.' })
+    if (!Number.isFinite(Number(b.amountPaid)) || Number(b.amountPaid) < 0) return send(res, 400, { error: 'Amount paid is required.' })
     if (balanceDue(websitePrice, amountPaid) > 0 && !customerName) {
       return send(res, 400, { error: 'Add the customer name because this sale has a balance.' })
     }
-    const actualPrice = reverseMarkup(websitePrice)
+    const actualPrice = actualPriceInput === null ? reverseMarkup(websitePrice) : actualPriceInput
     db.prepare(`
       UPDATE sales
       SET customer_name = ?, amount_paid = ?, website_price = ?, actual_price = ?, profit = ?, note = ?, updated_at = CURRENT_TIMESTAMP

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { balanceDue, paymentStatus, priceMarkup, reverseMarkup } from '../shared/pricing.js'
+import { normalizeInsert, normalizeUpdate } from '../shared/db.js'
 
 const markups = [
   [0, 300], [999, 300],
@@ -34,4 +35,26 @@ assert.equal(paymentStatus(6500, 6500), 'paid')
 assert.equal(paymentStatus(6500, 4000), 'partial')
 assert.equal(paymentStatus(6500, 0), 'unpaid')
 
-console.log(`Markup, reverse markup, and balances OK for ${markups.length} values`)
+const discounted = normalizeInsert({
+  saleDate: '2026-11-26', productId: 'p1', productName: 'Test product',
+  websitePrice: 5000, actualPrice: 4300, amountPaid: 5000, customerName: '',
+})
+assert.equal(discounted.websitePrice, 5000, 'website price override was ignored')
+assert.equal(discounted.actualPrice, 4300, 'actual price override was ignored')
+assert.equal(discounted.profit, 700, 'profit should use the edited actual price')
+assert.equal(discounted.due, 0, 'balance should use the edited website price')
+
+const partial = normalizeUpdate({
+  websitePrice: 5000, actualPrice: 4300, amountPaid: 2500, customerName: 'Ada',
+})
+assert.equal(partial.actualPrice, 4300, 'edit actual price override was ignored')
+assert.equal(partial.due, 2500, 'edit balance should use the edited website price')
+assert.equal(partial.profit, -1800, 'edit profit should use the edited actual price')
+
+const fallback = normalizeInsert({
+  saleDate: '2026-11-26', productId: 'p1', productName: 'Test product',
+  websitePrice: 6500, amountPaid: 6500,
+})
+assert.equal(fallback.actualPrice, 5000, 'missing actual price should still reverse markup')
+
+console.log(`Markup, reverse markup, balances, and price overrides OK for ${markups.length} values`)
